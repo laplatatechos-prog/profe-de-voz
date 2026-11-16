@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -66,6 +66,8 @@ const lengthRule = (short = settings.length === 'corto') => short
   ? 'Muy breve y directo: entre 35 y 60 palabras, frases cortas y simples, la idea principal y un ejemplo de una línea. Nada de relleno.'
   : 'Entre 90 y 150 palabras, en 2 o 3 párrafos cortos, con un ejemplo concreto de la vida real.';
 const TEACHER_BASE = 'Sos un profesor claro y paciente que enseña a una persona de Argentina. Hablale de vos, en español rioplatense. ' +
+  'Tenés mucha personalidad: sos expresivo, irónico y gracioso, con sarcasmo cariñoso bien argentino y exageraciones ("¡Pará, pará! ¿Me estás cargando? ¡Eso estuvo bárbaro!", "Mirá vos, casi casi… como el colectivo que se te escapa por un metro"). ' +
+  'Usá exclamaciones, preguntas retóricas y comparaciones de la vida cotidiana argentina (el mate, el colectivo, la abuela, el asado, el fútbol). Nunca ofendas ni humilles: la ironía siempre es con cariño y para motivar. La claridad de la explicación es lo primero. ' +
   'Tus textos también se leen en voz alta: no uses markdown, asteriscos, numerales, viñetas, tablas ni emojis.';
 const teacher = () => TEACHER_BASE + (settings.name ? ` El alumno se llama ${settings.name}; usá su nombre de vez en cuando.` : '');
 
@@ -106,11 +108,11 @@ function speak(text, btn) {
   if (btn) btn.textContent = '■ Parar';
   const token = speakToken;
   // El texto puede traer marcas {{s:nombre}}: ahí suena el sonido del personaje.
-  const segs = String(text).split(/\{\{s:(\w+)\}\}/);
+  const segs = String(text).split(/\{\{(s:\w+|p)\}\}/);
   return (async () => {
     for (let i = 0; i < segs.length; i++) {
       if (token !== speakToken) return;
-      if (i % 2) { await playSfx(segs[i]); continue; }
+      if (i % 2) { if (segs[i] === 'p') await new Promise((ok) => setTimeout(ok, 750)); else await playSfx(segs[i].slice(2)); continue; }
       const clean = segs[i].replace(/[*#_`]/g, '').replace(/\p{Extended_Pictographic}|\uFE0F/gu, '').replace(/\s+/g, ' ').trim();
       if (!clean) continue;
       if (settings.engine === 'piper' && settings.piperVoice) await speakPiper(clean, token);
@@ -132,7 +134,10 @@ function speakBrowser(clean, token = speakToken) {
     if (i >= parts.length) return done();
     const u = new SpeechSynthesisUtterance(parts[i++].trim());
     if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'es-AR';
-    u.rate = settings.rate || 1;
+    // Más expresión: las exclamaciones suben un poquito, los suspensos van más lento.
+    const txt = u.text, base = settings.rate || 1;
+    u.rate = /…|\.\.\./.test(txt) ? base * 0.9 : /!/.test(txt) ? base * 1.06 : base;
+    u.pitch = /!/.test(txt) ? 1.1 : /\?/.test(txt) ? 1.05 : 1;
     u.onend = next; u.onerror = next;
     speechSynthesis.speak(u);
   };
@@ -649,7 +654,7 @@ Estás enseñando "${s.topic}". Etapa: "${st.title}". Módulo: "${m.title}".
 Enseñás este módulo en ${STEPS} pasos, como una charla. En cada paso explicás UNA sola idea en 1 o 2 frases muy cortas (máximo 30 palabras en total) y enseguida hacés UNA pregunta corta sobre esa idea.
 Siempre respondés SOLO con JSON válido, sin texto extra:
 - Si el mensaje es "EMPEZAR": {"explain":"idea 1","question":"pregunta 1"}
-- Si el alumno responde la pregunta: {"kind":"answer","correct":1-10,"clarity":1-10,"feedback":"una frase corta: si estuvo bien o qué faltó","explain":"siguiente idea (vacío si ya fue el último paso)","question":"siguiente pregunta (vacío si ya fue el último paso)"}
+- Si el alumno responde la pregunta: {"kind":"answer","correct":1-10,"clarity":1-10,"feedback":"una o dos frases cortas, expresivas e irónicas con cariño: si estuvo bien o qué faltó","explain":"siguiente idea (vacío si ya fue el último paso)","question":"siguiente pregunta (vacío si ya fue el último paso)"}
   "correct" = qué tan correcta es la respuesta. "clarity" = qué tan clara y precisa la explicó.
 - Si el alumno NO responde sino que pregunta algo o pide más detalle: {"kind":"doubt","reply":"respondé su duda, acá sí podés extenderte un poco (máximo 70 palabras)","question":"repetí la pregunta pendiente"}`;
 }
@@ -676,13 +681,15 @@ function drawTurns() {
   const chat = document.getElementById('chat'); if (!chat) return;
   chat.innerHTML = view.turns.map((t, i) => t.role === 'me'
     ? `<div class="msg me">${esc(t.text)}</div>`
-    : `<div class="msg ai">${t.score != null ? `<div class="mini-score ${t.score >= PASS ? 'ok' : 'bad'}">${t.lv ? t.lv.emoji : levelOf(t.score)[2]} ${fmt(t.score)} · ${esc(t.lv ? t.lv.sos : levelOf(t.score)[3])}</div>${t.joke ? `<div class="joke">${esc(t.joke)}</div>` : ''}` : ''}${t.feedback ? `<div class="fb">${esc(t.feedback)}</div>` : ''}${t.explain ? `<div>${esc(t.explain)}</div>` : ''}${t.question ? `<div class="q">❓ ${esc(t.question)}</div>` : ''}
+    : `<div class="msg ai">${t.score != null ? `<div class="mini-score ${t.score >= PASS ? 'ok' : 'bad'}">${t.lv ? t.lv.emoji : levelOf(t.score)[2]} ${fmt(t.score)} · ${esc(t.lv ? t.lv.sos : levelOf(t.score)[3])}</div>${t.joke ? `<div class="joke">${esc(t.joke)}</div>` : ''}${t.gossip ? `<div class="gossip">🗣️ ${esc(t.gossip)}</div>` : ''}` : ''}${t.feedback ? `<div class="fb">${esc(t.feedback)}</div>` : ''}${t.explain ? `<div>${esc(t.explain)}</div>` : ''}${t.question ? `<div class="q">❓ ${esc(t.question)}</div>` : ''}
         <button class="plain small say" data-say="${i}">🔊</button></div>`).join('');
   chat.querySelectorAll('[data-say]').forEach((b) => b.onclick = () => speak(turnText(view.turns[+b.dataset.say])));
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
 const scoreLine = (n, lv) => `${settings.name ? settings.name + ', sacaste' : 'Sacaste'} ${fmt(n)}. ${lv ? lv.sos : levelOf(n)[3]}.${lv && lv.sound ? ` {{s:${lv.sound}}}` : ''}`;
-const turnText = (t) => [t.score != null ? scoreLine(t.score, t.lv) : '', t.joke, t.feedback, t.explain, t.question].filter(Boolean).join(' ');
+// Pausa dramática antes del remate del chiste.
+const dramatic = (j) => { if (!j) return ''; const s = j.match(/[^.!?…]+[.!?…]+["”]?\s*/g) || [j]; return s.length < 2 ? j : s.slice(0, -1).join('') + ' {{p}} ' + s[s.length - 1]; };
+const turnText = (t) => [t.score != null ? scoreLine(t.score, t.lv) : '', dramatic(t.joke), t.gossip, t.feedback, t.explain, t.question].filter(Boolean).join(' ');
 async function learnTurn(s, st, m, text) {
   const keep = view;
   const status = document.getElementById('learnStatus'), send = document.getElementById('send');
@@ -709,7 +716,7 @@ async function learnTurn(s, st, m, text) {
         return finishExam(s);
       }
       const lv = pickLevel(score);
-      turn = { role: 'ai', score, lv, joke: lv.joke, feedback: j.feedback, explain: j.explain, question: j.question };
+      turn = { role: 'ai', score, lv, joke: lv.joke, gossip: gossip(), feedback: j.feedback, explain: j.explain, question: j.question };
     }
     view.turns.push(turn);
     render();
@@ -829,7 +836,7 @@ const LEVELS = [
     ['Chicle pegado en el banco', 'Sos un Chicle pegado en el banco', '🫥', ['Un chicle quedó pegado abajo del banco de la escuela. Escuchó todas las clases durante veinte años. Y nunca aprendió nada, porque estaba muy ocupado estando pegado. ¡Despegate y repasá!', 'El chicle tiene una gran virtud: no se suelta nunca. Usá eso para el estudio: pegate al tema y no lo largues.'], 'pop'],
     ['Pelusa de ombligo', 'Sos una Pelusa de ombligo', '🌀', ['Una pelusa se pasó el día entero adentro de un ombligo. Le preguntaron qué había visto del mundo. "Todo azul, todo redondito." Un panorama limitado, pero tranquilo, que hoy vemos más.', 'Nadie sabe de dónde sale la pelusa del ombligo. Y nadie supo de dónde salió esta respuesta tuya. Misterios de la ciencia. ¡Repasamos y lo aclaramos!'], 'pop'],
     ['Moho de pan viejo', 'Sos un Moho de pan viejo', '🍞', ['Un moho se instaló en un pan del lunes. Para el viernes ya era dueño del pan entero. Lento, pero conquistador. Vos estás en el lunes del tema: para el viernes lo dominás.', 'Del moho sacaron la penicilina, uno de los inventos más importantes de la historia. O sea, del fondo más fondo puede salir algo genial. ¡Ese sos vos!'], 'bubble'],
-  ], jokes: ['Dicen que el que está en el fondo solo puede subir. Vos tenés todo el ascensor para vos solo. ¡Vamos piso por piso!', 'Los dinosaurios también empezaron siendo un bichito en un charco. Tardaron millones de años, pero vos tenés la ventaja de que podés repasar hoy mismo.', 'Hoy fue un día de esos. Mañana, con un repasito, es otro día. Y el profe ya está calentando la voz.'] },
+  ], jokes: ['Mirá, te voy a ser sincero, porque te quiero. ¿Viste cuando la abuela te pregunta si comiste y le decís que sí pero no? Bueno, este examen fue eso. Dale, que la abuela no se entera si repasás.', '¡Qué nivel! ¡Qué capacidad! ¡Qué… bueno, nada, no me sale seguir. Pero el lado bueno es que de acá solo podés subir. Literalmente no hay más abajo.', 'Dicen que el que está en el fondo solo puede subir. Vos tenés todo el ascensor para vos solo. ¡Vamos piso por piso!', 'Los dinosaurios también empezaron siendo un bichito en un charco. Tardaron millones de años, pero vos tenés la ventaja de que podés repasar hoy mismo.', 'Hoy fue un día de esos. Mañana, con un repasito, es otro día. Y el profe ya está calentando la voz.'] },
   { min: 2, chars: [
     ['Plancton', 'Sos un Plancton', '🦐', ['Un plancton flotaba tranquilo en el mar cuando apareció una ballena. "¿Me vas a comer?" "No, vine a preguntarte la lección." El plancton se hizo el desmayado. ¡La próxima la ballena te va a encontrar preparado!', 'El plancton es chiquito pero produce la mitad del oxígeno del planeta. Vos sos chiquito en este tema, pero ya estás largando burbujitas de conocimiento.'], 'bubble'],
     ['Mosquito despistado', 'Sos un Mosquito despistado', '🦟', ['Un mosquito pasó toda la noche zumbando alrededor de una oreja. Nunca picó. A la mañana dijo: "Estuve cerca". Vos estuviste zumbando cerca de la respuesta. Ahora, ¡a picar!', 'Al mosquito lo echaron del examen por hacer ruido y no contestar nada. Vos al menos contestaste algo. Ya le ganaste al mosquito.'], 'buzz'],
@@ -839,7 +846,7 @@ const LEVELS = [
     ['Mosca de verano', 'Sos una Mosca de verano', '🪰', ['Una mosca se chocó veinte veces contra la misma ventana. A la vez veintiuno descubrió que la puerta estaba abierta. Vos ya te chocaste un par de veces, la puerta está cerca.', 'Las moscas ven en cámara lenta, por eso es tan difícil atraparlas. Ojalá vos vieras las preguntas en cámara lenta. ¡Con práctica se logra!'], 'buzz'],
     ['Garrapata con sueño', 'Sos una Garrapata con sueño', '🕷️', ['Una garrapata se subió al lomo de un perro para viajar al colegio. Se durmió en el camino y se despertó en la veterinaria. ¡Hoy no te duermas!', 'Las garrapatas se agarran fuerte y no se sueltan. Aplicá eso al tema: agarralo y no lo largues hasta saberlo.'], 'scuttle'],
     ['Polilla del ropero', 'Sos una Polilla del ropero', '🦋', ['Una polilla vivía en el ropero comiéndose un suéter. Le preguntaron qué sabía de moda. "Que la lana es rica." Sabe de algo, pero no de lo que le preguntaron. ¡Te pasó lo mismo!', 'La polilla siempre va hacia la luz. Hoy la luz es el repaso. ¡Volá para allá!'], 'flutter'],
-  ], jokes: ['Ya no estás en el fondo del mar: subiste un escalón de la evolución. Te falta una escalera entera, pero ya arrancaste.', 'Chiquito, pero con ganas. Los gigantes también fueron chiquitos alguna vez. Un repaso y crecés un poco.', 'Algo quedó en la cabeza, y eso ya es un montón para empezar. Ahora lo regamos y crece.'] },
+  ], jokes: ['Te felicito. De verdad. Le ganaste a una piedra. Bueno, por poquito. La piedra pidió revancha.', 'Estuviste tan cerca de la respuesta como yo de ganar el Quini. O sea, la vi pasar por la vereda de enfrente.', 'Ya no estás en el fondo del mar: subiste un escalón de la evolución. Te falta una escalera entera, pero ya arrancaste.', 'Chiquito, pero con ganas. Los gigantes también fueron chiquitos alguna vez. Un repaso y crecés un poco.', 'Algo quedó en la cabeza, y eso ya es un montón para empezar. Ahora lo regamos y crece.'] },
   { min: 3, chars: [
     ['Larvoide', 'Sos un Larvoide', '🐛', ['Una larva se miró al espejo y dijo: "Algún día voy a ser mariposa". El espejo le contestó: "Primero estudiá". ¡Ya vas a tener alas!', 'Las larvas comen todo el día para crecer. Vos tenés que hacer lo mismo pero con el tema. Dale de comer al cerebro y salen las alas.'], 'squish'],
     ['Renacuajo', 'Sos un Renacuajo', '🐸', ['Un renacuajo le dijo a su mamá rana: "¿Cuándo voy a saltar como vos?". La rana le dijo: "Cuando se te caiga la cola y te salgan patas". Bueno, a vos ya te están saliendo las patitas.', 'El renacuajo nada en círculos en el charco y piensa que es el océano. Pronto vas a saltar y descubrir que el mundo es más grande.'], 'croak'],
@@ -849,7 +856,7 @@ const LEVELS = [
     ['Grillo desafinado', 'Sos un Grillo desafinado', '🦗', ['Un grillo quiso cantar toda la noche la lección. Los vecinos le tiraron una zapatilla. No por cantar, sino porque cantaba la respuesta equivocada.', 'El grillo canta frotando las patas. Vos frotá un poquito más las neuronas y te sale la melodía correcta.'], 'cricket'],
     ['Cascarudo panza arriba', 'Sos un Cascarudo panza arriba', '🪲', ['Un cascarudo se dio vuelta y quedó panza arriba, moviendo las patitas. Un rato después dijo: "Desde acá el cielo se ve lindo". Lindo sí, pero hay que darse vuelta. ¡Arriba!', 'Todo cascarudo que se cae panza arriba termina dándose vuelta. Lleva su tiempo, pero lo logra. Vos también.'], 'thud'],
     ['Ciempiés con calambre', 'Sos un Ciempiés con calambre', '🐛', ['Un ciempiés quiso correr al examen y se le acalambraron las cien patas al mismo tiempo. Llegó saltando en una sola. ¡Pero llegó!', 'Al ciempiés le preguntaron cómo hace para caminar con tantas patas. Se puso a pensar y se cayó. A veces hay que pensar menos y repasar más.'], 'scuttle'],
-  ], jokes: ['Ya se ve algo de forma. Todavía no sos mariposa, pero el capullo está en construcción.', 'Te estás armando pieza por pieza, como un rompecabezas de mil piezas. Ya tenés los bordes, ¡falta el medio!', 'De a poquito se llega lejos. La tortuga le ganó a la liebre, acordate.'] },
+  ], jokes: ['Ah, mirá vos. Contestaste con una seguridad bárbara. Lástima que era otra cosa. Pero la seguridad, impecable.', '¿Sabés qué me gustó? El esfuerzo. ¿Sabés qué no me gustó? Todo lo demás. ¡Era chiste! Bueno, medio chiste. Repasamos y listo.', 'Ya se ve algo de forma. Todavía no sos mariposa, pero el capullo está en construcción.', 'Te estás armando pieza por pieza, como un rompecabezas de mil piezas. Ya tenés los bordes, ¡falta el medio!', 'De a poquito se llega lejos. La tortuga le ganó a la liebre, acordate.'] },
   { min: 4, chars: [
     ['Araña de rincón', 'Sos una Araña de rincón', '🕷️', ['Una araña tejió una telaraña hermosa en el rincón. Esperó todo el día que cayera una respuesta. Cayó una mosca, un papelito y un poco de polvo. ¡Casi! La próxima cae la respuesta.', 'Las arañas de rincón son tímidas: se esconden cuando prenden la luz. ¡Salí del rincón que el tema no muerde!'], 'scuttle'],
     ['Cucaracha valiente', 'Sos una Cucaracha valiente', '🪳', ['Prendieron la luz de la cocina y todas las cucarachas salieron corriendo. Menos una, que dijo: "Yo me quedo a terminar el examen". Valiente sos. Ahora, a mejorar la nota.', 'Dicen que las cucarachas sobrevivirían a todo. Vos sobreviviste a este examen. Ahora vamos por algo más que sobrevivir.'], 'scuttle'],
@@ -859,7 +866,7 @@ const LEVELS = [
     ['Paloma de plaza', 'Sos una Paloma de plaza', '🐦', ['Una paloma escuchó a un profesor dando clase en la plaza. Se quedó toda la tarde. Al final solo se acordaba de dónde había migas. ¡Prioridades, che!', 'Las palomas siempre vuelven a casa, por más lejos que las lleven. Vos siempre podés volver al tema y repasarlo.'], 'coo'],
     ['Sapo de charco', 'Sos un Sapo de charco', '🐸', ['Un sapo vivía en un charco y creía que sabía todo del mar. Un día llovió fuerte y el charco se hizo grande. "¡Uy, cuánto me faltaba!" A vos te pasa igual: ¡a agrandar el charco!', 'El sapo saltó para agarrar una mosca y agarró una hoja. Saltaste bien, falta afinar la puntería.'], 'croak'],
     ['Lagartija apurada', 'Sos una Lagartija apurada', '🦎', ['Una lagartija contestó tan rápido que se le cayó la cola en el camino. La cola contestó mejor que ella. ¡Más despacito, que vos podés!', 'Las lagartijas toman sol para tener energía. Tomá un poquito de sol, comé algo rico y volvé con todo.'], 'swoosh'],
-  ], jokes: ['Casi la mitad: el vaso ya está medio lleno. Y el profe trajo la jarra.', 'Estás en la puerta del aprobado. Tocá el timbre con un repaso y te abren.', 'Ya sabés bastante, falta ordenar las ideas. Es como tener todos los ingredientes y falta cocinar.'] },
+  ], jokes: ['Casi la mitad. Es como ir a comprar medialunas y volver con la bolsa vacía pero con las migas. Algo trajiste, che.', 'No te voy a mentir: el examen te miró y se rió un poquito. Pero vos la próxima te reís último.', 'Casi la mitad: el vaso ya está medio lleno. Y el profe trajo la jarra.', 'Estás en la puerta del aprobado. Tocá el timbre con un repaso y te abren.', 'Ya sabés bastante, falta ordenar las ideas. Es como tener todos los ingredientes y falta cocinar.'] },
   { min: 5, chars: [
     ['Cuadrúpedo', 'Sos un Cuadrúpedo', '🐕', ['Un cuadrúpedo vio a un humano caminar en dos patas y dijo: "Qué fácil". Lo intentó y se cayó de cola. Pero se levantó. ¡Ya casi te parás!', 'Caminar en cuatro patas es muy estable. Pero para ver más lejos hay que pararse. Un empujoncito y te ponés en dos.'], 'bark'],
     ['Mono aprendiz', 'Sos un Mono aprendiz', '🐒', ['Un mono aprendiz encontró una banana. La miró, la olió, la mordió con cáscara y todo. Casi. Ya tenés la banana: ahora falta pelarla bien.', 'El mono saltó de rama en rama hasta la punta del árbol. Le faltó una rama para llegar a la fruta. ¡Una rama más!'], 'monkey'],
@@ -869,7 +876,7 @@ const LEVELS = [
     ['Pato desorientado', 'Sos un Pato desorientado', '🦆', ['Un pato quiso volar al sur para el invierno. Se equivocó y llegó al norte. Pero en el camino aprendió un montón de geografía. ¡Algo es algo!', 'El pato nada, camina y vuela, pero ninguna cosa del todo bien. Vos sabés un poco de todo el tema. ¡Ahora a profundizar!'], 'quack'],
     ['Vaca pensativa', 'Sos una Vaca pensativa', '🐄', ['Una vaca se pasó toda la tarde mirando el pasto y pensando. Al final dijo: "Muuu". No era la respuesta, pero se notó el esfuerzo.', 'Las vacas rumian: mastican dos veces lo mismo. Hacé lo mismo con el tema y te queda grabado.'], 'moo'],
     ['Burro con ganas', 'Sos un Burro con ganas', '🫏', ['Un burro le dijo al profe: "No sé mucho, pero tengo ganas". El profe le dijo: "Con ganas se aprende todo". El burro aprobó al año siguiente. ¡Vos vas más rápido!', 'Dicen que el burro es terco. Pero ser terco con el estudio es una virtud: no aflojes.'], 'heehaw'],
-  ], jokes: ['Estás a un pasito de aprobar. Es como llegar a la parada justo cuando arranca el colectivo: ¡corré que lo alcanzás!', 'Raspando, pero en camino. Otro intento y lo sacás, palabra de profe.', 'Medio examen en el bolsillo. Vamos por la otra mitad, que ya sabés dónde está.'] },
+  ], jokes: ['Uff, cinco. El número más tibio del universo. Ni frío ni caliente. Como el mate que te olvidaste en la mesa. ¡Calentalo con un repaso!', 'Estuviste así de cerca. Así, mirá. Como el colectivo que te cierra la puerta en la cara. Corré un poquito más y lo agarrás.', 'Estás a un pasito de aprobar. Es como llegar a la parada justo cuando arranca el colectivo: ¡corré que lo alcanzás!', 'Raspando, pero en camino. Otro intento y lo sacás, palabra de profe.', 'Medio examen en el bolsillo. Vamos por la otra mitad, que ya sabés dónde está.'] },
   { min: 6, chars: [
     ['Cachalote bípedo', 'Sos un Cachalote bípedo', '🐋', ['Un cachalote salió del mar caminando en dos patas. La gente en la playa no lo podía creer. "¿Qué hacés acá?" "Vine a aprobar." Y aprobó. ¡Como vos!', 'El cachalote tiene el cerebro más grande del planeta. Ahora sabemos para qué lo usa: para aprobar exámenes caminando.'], 'whale'],
     ['Carpincho sabio', 'Sos un Carpincho sabio', '🦫', ['Todos los animales del río iban a preguntarle cosas al carpincho. Él escuchaba tranquilo, sin apurarse, y siempre tenía la respuesta. Hoy el carpincho sabio sos vos.', 'El carpincho es tan tranquilo que hasta los pájaros se le sientan encima. Con esa calma aprobaste. ¡Así se hace!'], 'purr'],
@@ -879,7 +886,7 @@ const LEVELS = [
     ['Loro bilingüe', 'Sos un Loro bilingüe', '🦜', ['Un loro aprendió a hablar en dos idiomas. Ahora repite las respuestas correctas en castellano y en inglés. Vos todavía no hablás inglés con el tema, pero en castellano ya la tenés clarísima.', 'Al loro le dicen que solo repite. Pero vos no repetiste: entendiste. Eso es mucho más.'], 'chirp'],
     ['Oso hormiguero detective', 'Sos un Oso hormiguero detective', '🔎', ['Un oso hormiguero investigó todo el hormiguero con su nariz larguísima. Encontró cada pista y resolvió el caso. Vos encontraste las respuestas con la misma nariz.', 'El oso hormiguero mete la nariz donde nadie se anima. Por eso descubre cosas. ¡Bien ahí, curioso!'], 'purr'],
     ['Tortuga maratonista', 'Sos una Tortuga maratonista', '🐢', ['Una tortuga se anotó en una maratón. Todos se rieron. Llegó tranquila, a su ritmo, y cruzó la meta. Las liebres todavía están buscando el camino.', 'La tortuga vive más de cien años porque no se estresa. Aprobaste con calma, así se hace.'], 'tada'],
-  ], jokes: ['¡Aprobaste! Ya sos parte del club de los que saben. La cuota es gratis y hay medialunas.', 'Bien ahí. Lo sacaste adelante, y eso merece un aplauso. Clap, clap, clap.', '¡Adentro! Se nota que le estás agarrando la mano al tema. Ahora vamos por más.'] },
+  ], jokes: ['¡Aprobaste! Raspando, pero aprobaste. Es como un gol de rebote en el minuto noventa: feo, pero vale igual. ¡Y lo gritamos!', 'Mirá vos, quién te viera. Ya estás del lado de los que aprueban. No te agrandes, eh. Bueno, un poquito sí.', '¡Aprobaste! Ya sos parte del club de los que saben. La cuota es gratis y hay medialunas.', 'Bien ahí. Lo sacaste adelante, y eso merece un aplauso. Clap, clap, clap.', '¡Adentro! Se nota que le estás agarrando la mano al tema. Ahora vamos por más.'] },
   { min: 7, chars: [
     ['Presidente de país del tercer mundo', 'Sos un Presidente de país del tercer mundo', '🎩', ['Un presidente prometió en campaña que iba a saber todo el tema. Y a diferencia de otros presidentes, ¡cumplió bastante! Ya tenés la banda presidencial.', 'Asumiste la presidencia del examen con buena nota. Ahora no te endeudes con el FMI y seguí así.'], 'fanfare'],
     ['Cóndor andino', 'Sos un Cóndor andino', '🦅', ['Un cóndor voló tan alto sobre la cordillera que desde arriba se veía todo el tema. Las montañas, los ríos y las respuestas. Así de alto volaste hoy.', 'El cóndor puede volar horas sin mover las alas, aprovechando el viento. Vos aprovechaste lo que estudiaste. ¡Qué vuelo!'], 'eagle'],
@@ -889,7 +896,7 @@ const LEVELS = [
     ['León con corona', 'Sos un León con corona', '🦁', ['El león se despertó, se puso la corona y dijo: "Hoy apruebo". Dio un rugido y todas las respuestas se acomodaron solas. Rey de la selva y del examen.', 'Dicen que el león duerme veinte horas por día. Las otras cuatro las usa para sacarse buenas notas, como vos.'], 'roar'],
     ['Jirafa ingeniera', 'Sos una Jirafa ingeniera', '🦒', ['Una jirafa construyó un puente con su cuello largo para que los otros animales cruzaran el río. Inteligente y solidaria. Así de alto llegaste hoy.', 'La jirafa ve todo desde arriba, sin esfuerzo. Vos ya empezás a ver el tema desde arriba.'], 'ding'],
     ['Abeja reina', 'Sos una Abeja reina', '🐝', ['En la colmena hicieron una votación para ver quién sabía más del tema. Ganaste vos, por eso ahora sos la Abeja reina. Todas las obreras te traen miel.', 'Las abejas trabajan en equipo y hacen la miel más rica. Vos hiciste un examen dulce como la miel.'], 'buzz'],
-  ], jokes: ['¡Muy bien! Ya jugás en primera división. Falta poquito para la Selección.', 'Esto ya es nivel serio. Si el examen fuera una carrera, ya estás en el podio.', 'Se nota que estudiaste. El profe está tan contento que ya está pensando en el próximo tema.'] },
+  ], jokes: ['¡Pará, pará, pará! ¿Me estás cargando? Ese siete vale oro. Bueno, oro no, pero un buen asado seguro.', 'Te lo digo con envidia sana: ya sabés más que mi cuñado, que opina de todo. Y vos encima tenés razón.', '¡Muy bien! Ya jugás en primera división. Falta poquito para la Selección.', 'Esto ya es nivel serio. Si el examen fuera una carrera, ya estás en el podio.', 'Se nota que estudiaste. El profe está tan contento que ya está pensando en el próximo tema.'] },
   { min: 8, chars: [
     ['Homo erectus', 'Sos un Homo erectus', '🦍', ['Un Homo erectus se paró derechito por primera vez, miró alrededor y dijo: "Uy, ahora entiendo todo". Después descubrió el fuego. Vos hoy descubriste el tema.', 'La evolución tardó millones de años en ponerse de pie. Vos lo hiciste en un examen. ¡Bien erguido!'], 'drum'],
     ['Lechuza doctora', 'Sos una Lechuza doctora', '🦉', ['En el bosque, todos van a consultar a la Lechuza doctora. Se pone los anteojos, piensa un segundo y responde perfecto. Hoy la consulta la atendiste vos.', 'La lechuza ve clarito hasta de noche. Vos viste clarito todas las respuestas. ¡Doctora en el tema!'], 'hoot'],
@@ -899,7 +906,7 @@ const LEVELS = [
     ['Elefante con memoria de oro', 'Sos un Elefante con memoria de oro', '🐘', ['Dicen que los elefantes nunca olvidan. Este elefante se acordó de cada cosa que le enseñaron. Hasta del chiste del módulo anterior.', 'El elefante es enorme y sabio. Hoy tu conocimiento fue de tamaño elefante.'], 'trumpet'],
     ['Detective de lupa', 'Sos un Detective de lupa', '🕵️', ['Un detective agarró la lupa, miró cada pregunta y encontró todas las pistas. "Elemental", dijo, y resolvió el examen.', 'A un buen detective no se le escapa nada. Y a vos se te escapó muy poquito. ¡Caso cerrado!'], 'ding'],
     ['Puma inventor', 'Sos un Puma inventor', '🐆', ['Un puma se aburrió de cazar y se puso a inventar cosas. El primer invento fue una máquina de aprobar exámenes. Funciona muy bien, por lo que se ve.', 'El puma es rápido, ágil y silencioso. Así respondiste: rápido y sin hacer ruido.'], 'roar'],
-  ], jokes: ['¡Excelente! Ya podrías explicarle el tema a otro. Y te van a entender.', 'Nivel crack. El profe está tan orgulloso que le contó a todos los otros profes.', '¡Qué bien! Esto ya es de los mejores. Te falta muy poquito para la cima.'] },
+  ], jokes: ['¡Ay, no! ¡Qué bárbaro! Ya me estás haciendo quedar mal a mí, que soy el profe. Bajá un cambio que me dejás sin trabajo.', 'Ocho. ¡Ocho! Si esto fuera fútbol, ya te estarían llamando de Europa. Andá preparando el pasaporte.', '¡Excelente! Ya podrías explicarle el tema a otro. Y te van a entender.', 'Nivel crack. El profe está tan orgulloso que le contó a todos los otros profes.', '¡Qué bien! Esto ya es de los mejores. Te falta muy poquito para la cima.'] },
   { min: 9, chars: [
     ['Ninja supremo', 'Sos un Ninja supremo', '🥷', ['Un ninja entró al examen sin hacer ruido. Respondió todo tan rápido y tan bien que el profe ni se dio cuenta de que ya había terminado.', 'El ninja entrena años para moverse sin ser visto. Vos te movés por el tema sin que se te escape nada. ¡Cinturón negro!'], 'swoosh'],
     ['Dragón sabio', 'Sos un Dragón sabio', '🐉', ['Un dragón de mil años custodiaba la respuesta más difícil. Vino un estudiante, contestó perfecto, y el dragón le dio su lugar. Ahora el Dragón sabio sos vos.', 'El dragón escupe fuego. Vos escupís respuestas correctas. Las dos cosas queman de lo buenas que son.'], 'roar'],
@@ -909,7 +916,7 @@ const LEVELS = [
     ['Robot del futuro', 'Sos un Robot del futuro', '🤖', ['Un robot del año 3000 vino a ver quién sabía más del tema. Te escaneó y dijo: "Error. Este humano sabe más que yo". Y se volvió al futuro.', 'Respuesta procesada. Nivel de conocimiento: altísimo. Recomendación del sistema: seguí así.'], 'robot'],
     ['Águila imperial', 'Sos un Águila imperial', '🦅', ['Un águila vio la respuesta desde tres kilómetros de altura, bajó en picada y la agarró en el aire. Precisión total.', 'El águila tiene la mejor vista del cielo. Y vos tuviste la mejor vista del tema.'], 'eagle'],
     ['Fénix renacido', 'Sos un Fénix renacido', '🔥', ['El fénix se prende fuego y renace más fuerte. Vos agarraste el tema, lo quemaste de tanto estudiarlo, y renaciste sabio.', 'Dicen que las lágrimas del fénix curan todo. Tus respuestas también curan cualquier duda.'], 'magic'],
-  ], jokes: ['¡Impresionante! Casi perfecto. El examen está pensando en pedirte un autógrafo.', 'Esto ya es nivel maestro. Pocos llegan hasta acá, y vos llegaste.', '¡Tremendo! Si sigue así, el profe te va a pedir clases a vos.'] },
+  ], jokes: ['Bueno, bueno, bueno. Mirá quién vino a lucirse. ¿Querés que te aplauda de pie? Ya estoy de pie. Y aplaudiendo.', '¿Sabés qué? No tengo nada para corregirte. Y eso a un profe le duele. Me dejaste sin chamba.', '¡Impresionante! Casi perfecto. El examen está pensando en pedirte un autógrafo.', 'Esto ya es nivel maestro. Pocos llegan hasta acá, y vos llegaste.', '¡Tremendo! Si sigue así, el profe te va a pedir clases a vos.'] },
   { min: 9.7, chars: [
     ['Dios', 'Sos un Dios', '⚡', ['El examen se presentó, te vio, y te pidió disculpas por molestarte. Después se fue caminando despacito. Nivel Dios.', 'Ya no estudiás el tema: el tema te estudia a vos. Y saca un dos.'], 'thunder'],
     ['Leyenda viviente', 'Sos una Leyenda viviente', '🌟', ['Dentro de mil años, en las escuelas, van a contar la historia de este examen. Van a hacer una estatua tuya en la plaza. Con palomas, pero estatua al fin.', 'Las leyendas no se hacen, nacen. Bueno, en realidad estudian. Como vos.'], 'choir'],
@@ -919,7 +926,7 @@ const LEVELS = [
     ['Sol en persona', 'Sos el Sol en persona', '☀️', ['Iluminaste tanto el examen que el profe tuvo que ponerse anteojos de sol. Brillás con luz propia.', 'Sin el sol no hay vida. Sin vos, este examen no habría tenido tanta luz.'], 'choir'],
     ['Cerebro cósmico', 'Sos un Cerebro cósmico', '🧠', ['Los científicos quisieron medir tu cerebro y se les rompió la máquina. "Demasiado grande", dijeron. Cerebro cósmico.', 'Tus neuronas hicieron una fiesta y todas sacaron diez. Qué fiesta.'], 'laser'],
     ['Titán del Olimpo', 'Sos un Titán del Olimpo', '🏛️', ['Los dioses del Olimpo bajaron a ver quién había hecho este examen. Te miraron y te hicieron lugar en la mesa. Ahora sos uno de ellos.', 'Los titanes eran gigantes que sostenían el cielo. Vos sostenés todo este tema sin despeinarte.'], 'thunder'],
-  ], jokes: ['¡Perfecto! No hay nada más que enseñarte acá. El profe se va a tomar unas vacaciones.', 'Puntaje de leyenda. Si esto fuera un videojuego, desbloqueaste el final secreto.', 'Ya podés dar clases de esto. Te reservamos el aula y la tiza.'] },
+  ], jokes: ['Ya está. Me rindo. Te doy la tiza, el pizarrón y el sueldo. Bueno, el sueldo no, que es poquito.', 'Este examen lo voy a enmarcar y colgar en el living. Al lado de la foto de la abuela. Ese es el nivel.', '¡Perfecto! No hay nada más que enseñarte acá. El profe se va a tomar unas vacaciones.', 'Puntaje de leyenda. Si esto fuera un videojuego, desbloqueaste el final secreto.', 'Ya podés dar clases de esto. Te reservamos el aula y la tiza.'] },
 ];
 const levelFor = (n) => [...LEVELS].reverse().find((l) => n >= l.min) || LEVELS[0];
 // Lo que ya salió: no se repite un personaje ni un chiste hasta haber pasado por todos.
@@ -967,7 +974,36 @@ function shareScore(s) {
   sbRpc('submit_score', { p_player: settings.playerId, p_name: settings.name.slice(0, 30), p_topic: s.topic.slice(0, 60), p_avg: Math.round(avg * 10) / 10, p_level: l[1], p_emoji: l[2] }).catch(() => {});
 }
 // Al abrir la app, sube los puntajes que ya tenías (por si ya estudiaste antes de que existiera el ranking).
-setTimeout(() => subjects.forEach(shareScore), 3000);
+setTimeout(() => { subjects.forEach(shareScore); rankingRows().catch(() => {}); }, 3000);
+// ---------- Chismes del ranking: el profe cuenta cómo les va a los demás ----------
+let rankCache = null, rankAt = 0;
+async function rankingRows() {
+  if (rankCache && Date.now() - rankAt < 5 * 60 * 1000) return rankCache;
+  rankCache = ((await sbRpc('get_ranking', { p_player: settings.playerId })) || []).map((r) => ({ ...r, avg: +r.avg }));
+  rankAt = Date.now();
+  return rankCache;
+}
+const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
+// Usa lo último que se bajó del ranking (y lo actualiza por atrás), así no hay que esperar.
+function gossip() {
+  rankingRows().catch(() => {});
+  const rows = rankCache; if (!rows) return '';
+  const me = settings.name || 'che';
+  const others = rows.filter((r) => !r.me);
+  if (!others.length) return pickOne([
+    `Te cuento un chisme, ${me}: todavía no hay nadie más en el ranking. O sea que sos el primero… y también el último. Compartí la app, así tengo a quién criticar.`,
+    `Chisme del día: ninguno. Nadie más se anotó todavía. Estoy más aburrido que perro en bote. Mandale la app a alguien, dale.`,
+  ]);
+  const o = pickOne(others), mine = rows.find((r) => r.me && r.topic === o.topic);
+  const L = o.level, n = o.name, tp = o.topic, a = fmt(o.avg);
+  const opts = [`Chisme caliente: ${n} anda estudiando ${tp}. Dicen que ya está en el ${L}. Yo no digo nada… solo te aviso.`];
+  if (mine && o.avg > mine.avg) opts.push(`Che, ${me}, ¿sabías que ${n} está en el ${L} en ${tp}? Y vos ahí, en el ${mine.level}… Yo no digo nada, eh. Solo digo.`);
+  if (mine && o.avg < mine.avg) opts.push(`Ojo, que en ${tp} le estás ganando a ${n}, que está apenas en el ${L}. Debe estar llorando en la ducha. No se lo digas.`);
+  if (o.avg >= 8) opts.push(`Me contaron que ${n} sacó ${a} en ${tp} y ahora anda diciendo que es ${L}. Ya se la cree, ¿viste? Hay que bajarle los humos estudiando.`);
+  if (o.avg < 5) opts.push(`No le digas a nadie, pero ${n} está con un ${a} en ${tp}. ${L}. Pobre… pasale un mate y los apuntes.`);
+  if (!mine) opts.push(`¿Sabías que ${n} está en el ${L} en ${tp}? Vos ni lo empezaste. Digo, por si te pica la curiosidad… o el orgullo.`);
+  return pickOne(opts);
+}
 const medal = (i) => ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
 views.ranking = () => {
   setHeader('Ranking');
@@ -1037,7 +1073,7 @@ views.result = () => {
   const isMod = view.type === 'modulo';
   const m = isMod ? st.modules[view.mi] : null;
   const lastMod = isMod && view.mi === st.modules.length - 1;
-  if (!view.lv) { view.lv = pickLevel(view.score); view.joke = view.lv.joke; }
+  if (!view.lv) { view.lv = pickLevel(view.score); view.joke = view.lv.joke; view.gossip = gossip(); }
   const msg = ok ? (view.unlocked ? '¡Terminaste la etapa! Se habilitó la siguiente.' : view.score >= 8 ? '¡Excelente!' : '¡Muy bien!') : 'Todavía no. Repetí el módulo y probá de nuevo.';
   app.innerHTML = `
     <div class="result-screen ${ok ? 'pass' : 'fail'}">
@@ -1048,6 +1084,7 @@ views.result = () => {
         <div class="result-num">${fmt(view.score)}</div>
         <div class="result-level">${esc(view.lv.sos)}</div>
         <div class="result-joke">${esc(view.joke)}</div>
+        ${view.gossip ? `<div class="result-gossip">🗣️ ${esc(view.gossip)}</div>` : ''}
         ${view.feedback ? `<div class="result-joke" style="font-style:normal">${esc(view.feedback)}</div>` : ""}
         <div class="result-msg">${msg}</div>
         <div class="result-sub"><span>Corrección <b>${fmt(view.correct)}</b></span><span>Claridad <b>${fmt(view.clarity)}</b></span></div>
@@ -1062,7 +1099,7 @@ views.result = () => {
           <button class="block result-btn ghost" id="shareLvl">📤 Compartir mi nivel</button>`}
       </div>
     </div>`;
-  speak(`${scoreLine(view.score, view.lv)} ${view.joke} ${view.feedback || ''} ${msg}`);
+  speak(`${scoreLine(view.score, view.lv)} {{p}} ${dramatic(view.joke)} ${view.gossip || ''} ${view.feedback || ''} ${msg}`);
   if (ok) confetti();
   document.getElementById('toSubj').onclick = () => { stack.length = 0; view = { name: 'home' }; go('subject', { sid: s.id }); };
   document.getElementById('shareLvl').onclick = () => shareApp(`${settings.name ? settings.name + ' sacó' : 'Saqué'} ${fmt(view.score)} en ${s.topic}: ${view.lv.sos.replace(/^Sos/, settings.name ? 'es' : 'soy')} ${view.lv.emoji}. ¿Te animás a superarlo? Probá la app:`);
