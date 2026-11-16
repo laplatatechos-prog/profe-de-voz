@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 38;
+const APP_VERSION = 39;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -400,17 +400,17 @@ const listenBtn = (id) => `<button class="soft speak-btn" data-speak="${id}">▶
 
 // ---------- Compartir: abre el menú del teléfono (WhatsApp, etc.) o copia el link ----------
 const APP_LINK = 'https://laplatatechos-prog.github.io/profe-de-voz/';
-async function shareApp(text) {
+async function shareApp(text, link = APP_LINK) {
   const msg = text || '¡Mirá esta app! Te enseña cualquier tema hablando, te toma examen y te dice qué bicho sos: del Musgo hasta Nivel Dios. ¿Te animás?';
   // En el celular: el menú del teléfono (WhatsApp, Telegram, mail, SMS, Instagram y todas las apps).
   if (navigator.share && /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent)) {
-    try { await navigator.share({ title: 'Profe de Voz', text: msg, url: APP_LINK }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { await navigator.share({ title: 'Profe de Voz', text: msg, url: link }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
   }
-  shareMenu(msg);
+  shareMenu(msg, link);
 }
 // En la compu (o si el teléfono no tiene menú): botones para cada lugar.
-function shareMenu(msg) {
-  const full = `${msg} ${APP_LINK}`, m = encodeURIComponent(msg), u = encodeURIComponent(APP_LINK), f = encodeURIComponent(full);
+function shareMenu(msg, link = APP_LINK) {
+  const full = `${msg} ${link}`, m = encodeURIComponent(msg), u = encodeURIComponent(link), f = encodeURIComponent(full);
   const opts = [
     ['💬', 'WhatsApp', `https://wa.me/?text=${f}`],
     ['✈️', 'Telegram', `https://t.me/share/url?url=${u}&text=${m}`],
@@ -443,7 +443,7 @@ const COUNTDOWN = 20;
 let cdTimer = null, cdWait = 0;
 function clearCountdown() { clearInterval(cdTimer); cdTimer = null; cdWait++; document.querySelectorAll('.countdown').forEach((x) => x.remove()); }
 // Arranca cuando la voz termina de leer la pregunta. Al llegar a 0 manda lo que haya escrito, o "no sé".
-function startCountdown(spoken, onZero) {
+function startCountdown(spoken, onZero, everySecond) {
   clearCountdown();
   const my = cdWait;
   Promise.resolve(spoken).then(() => {
@@ -455,10 +455,10 @@ function startCountdown(spoken, onZero) {
     const ring = d.querySelector('.cd-ring'), num = d.querySelector('b'), L = 2 * Math.PI * 44;
     ring.style.strokeDasharray = L;
     const paint = () => { num.textContent = left; ring.style.strokeDashoffset = L * (1 - left / COUNTDOWN); d.classList.toggle('hurry', left <= 5); num.classList.remove('beat'); void num.offsetWidth; num.classList.add('beat'); };
-    paint();
+    paint(); if (everySecond) playSfx('tick', true);
     cdTimer = setInterval(() => {
       left--; paint();
-      if (left > 0 && left <= 5) playSfx('tick', true);
+      if (left > 0 && (everySecond || left <= 5)) playSfx('tick', true);
       if (left <= 0) { clearCountdown(); onZero(); }
     }, 1000);
   });
@@ -490,6 +490,10 @@ const needsAccess = () => !settings.key && !(settings.access && settings.access.
 let lastShown = null;
 function render() {
   if (needsAccess() && !['access', 'settings'].includes(view.name)) view = { name: 'access' };
+  else if (view.name === 'home' && store.get('profe-duel-pending', null)) { // abrieron un link de duelo
+    const id = store.get('profe-duel-pending', null); try { localStorage.removeItem('profe-duel-pending'); } catch {}
+    stack.length = 0; stack.push(view); view = { name: 'duel', id };
+  }
   (views[view.name] || views.home)();
   document.body.classList.toggle('has-answer', view.name === 'module' || view.name === 'exam');
   if (lastShown !== view) { lastShown = view; app.classList.remove('enter'); void app.offsetWidth; app.classList.add('enter'); } // animación solo al cambiar de pantalla
@@ -664,14 +668,14 @@ views.home = () => {
       <div class="sug-wrap">${pickSome(SUGGESTIONS.filter((x) => !subjects.some((s) => s.topic.toLowerCase() === x.toLowerCase())), 6).map((x) => `<button class="chip sug" data-sug="${esc(x)}">${esc(x)}</button>`).join('')}</div>
       <div id="homeStatus" class="muted small" style="margin-top:8px"></div>
     </div>
-    <div class="row share-row">${SB_URL ? '<button class="grow rank-cta" id="toRank">🏆 Ranking</button>' : ''}<button class="grow share-cta" id="shareBtn">📤 Compartir la app</button></div>
+    <div class="row share-row">${SB_URL ? '<button class="grow rank-cta" id="toRank">⚔️ Competencia</button>' : ''}<button class="grow share-cta" id="shareBtn">📤 Compartir la app</button></div>
     <button class="block soft" id="toChars" style="margin-top:8px">🐾 Ver todos los personajes</button>
     <h2>Mis áreas</h2>
     ${items || '<p class="muted">Todavía no agregaste ninguna.</p>'}`;
   const ng = document.getElementById('nameGo');
   if (ng) { const ni = document.getElementById('nameInput'); ni.onkeydown = (e) => { if (e.key === 'Enter') ng.click(); };
     ng.onclick = () => { const n = ni.value.trim(); if (!n) return; settings.name = n; save(); render(); speak(`Hola, soy tu profe. ¿Qué querés aprender hoy?`); }; }
-  const tr = document.getElementById('toRank'); if (tr) tr.onclick = () => go('ranking');
+  const tr = document.getElementById('toRank'); if (tr) tr.onclick = () => go('compete');
   document.getElementById('toChars').onclick = () => go('characters');
   document.getElementById('shareBtn').onclick = () => shareApp();
   const ts = document.getElementById('toSettings'); if (ts) ts.onclick = (e) => { e.preventDefault(); go('settings'); };
@@ -895,6 +899,204 @@ views.characters = () => {
   app.querySelectorAll('[data-snd]').forEach((el) => el.onclick = () => { audioCtx(); playSfx(el.dataset.snd, true);
     const e = el.querySelector('.char-emoji'); e.classList.remove(e.dataset.anim); void e.offsetWidth; e.classList.add(e.dataset.anim); });
 };
+
+// ---------- Competencia: duelos por link ----------
+// Dos (o más) personas contestan las mismas preguntas de escuela. 20 segundos cada una.
+// Puntos: hasta 100 por respuesta correcta + 1 punto por cada segundo que te sobró (si estuvo bien).
+// Acá NO habla el profe: ni chistes, ni personajes, ni confidencias. Solo puntaje.
+const DUEL_N = 8, DUEL_T = 20;
+const DUEL_TOPICS = [['mezcla', '🎲 Mezcla de todo'], ['matematica', '➗ Matemática'], ['lengua', '📖 Lengua'], ['naturales', '🌱 Ciencias naturales'],
+  ['historia', '🇦🇷 Historia'], ['geografia', '🗺️ Geografía'], ['cultura', '🧠 Cultura general']];
+const duelTopicName = (k) => (DUEL_TOPICS.find((x) => x[0] === k) || DUEL_TOPICS[0])[1].replace(/^\S+\s/, '');
+const duelLink = (id) => `${APP_LINK}?duelo=${id}`;
+// Si alguien abrió un link de duelo, lo guardamos hasta que tenga acceso.
+try { const q = new URLSearchParams(location.search).get('duelo'); if (q && /^[a-z0-9]{6,12}$/.test(q)) { store.set('profe-duel-pending', q); history.replaceState(null, '', location.pathname); } } catch {}
+let duelPoll = null;
+function stopDuelPoll() { clearInterval(duelPoll); duelPoll = null; }
+const secs = (n) => `${Math.floor(n / 60) ? Math.floor(n / 60) + ' min ' : ''}${n % 60} s`;
+
+views.compete = () => {
+  setHeader('Competencia');
+  const draw = () => {
+    const ds = view.duels || [];
+    app.innerHTML = `
+      <div class="card ask-card"><div class="ask-q">⚔️ Duelo</div>
+        <div class="muted small">${DUEL_N} preguntas de escuela. Tenés ${DUEL_T} segundos para cada una. Por cada respuesta bien sumás hasta 100 puntos, y además 1 punto por cada segundo que te sobró. Gana el que suma más.</div>
+        <div class="muted small" style="margin-top:10px">Elegí el tema:</div>
+        <div class="sug-wrap">${DUEL_TOPICS.map(([k, l]) => `<button class="chip ${(view.dt || 'mezcla') === k ? 'on' : ''}" data-dt="${k}">${l}</button>`).join('')}</div>
+        <button class="block" id="newDuel" style="margin-top:12px">Crear duelo y desafiar →</button>
+        <div id="duelMsg" class="muted small" style="margin-top:8px"></div></div>
+      <h2>Mis duelos</h2>
+      ${view.loading ? '<p class="muted">Cargando…</p>' : view.err ? `<p class="muted">${esc(view.err)}</p>` : ds.length ? ds.map((d) => {
+        const me = d.results.find((r) => r.me), others = d.results.filter((r) => !r.me);
+        return `<div class="card tap duel-row" data-duel="${d.id}"><div class="between"><b>${esc(d.topic)}</b><span class="muted small">${new Date(d.created_at).toLocaleDateString('es-AR')}</span></div>
+          <div class="small" style="margin-top:6px">${d.results.length ? d.results.map((r, i) => `${i === 0 && r.done && d.results.length > 1 ? '🏆 ' : ''}${esc(r.me ? 'Vos' : r.name)}: <b>${r.points}</b>${r.done ? '' : ' (jugando)'}`).join(' · ') : 'Nadie jugó todavía'}</div>
+          ${!me || !me.done ? '<div class="small" style="margin-top:4px;color:var(--accent);font-weight:700">Te toca jugar →</div>' : !others.length ? '<div class="muted small" style="margin-top:4px">Esperando rival. Compartí el link.</div>' : ''}</div>`;
+      }).join('') : '<p class="muted">Todavía no tenés duelos. ¡Creá uno y mandale el link a alguien!</p>'}
+      <button class="block soft" id="toRank2" style="margin-top:12px">🏆 Ver el ranking</button>`;
+    app.querySelectorAll('[data-dt]').forEach((el) => el.onclick = () => { view.dt = el.dataset.dt; draw(); });
+    app.querySelectorAll('[data-duel]').forEach((el) => el.onclick = () => go('duel', { id: el.dataset.duel }));
+    document.getElementById('toRank2').onclick = () => go('ranking');
+    document.getElementById('newDuel').onclick = () => createDuel(view.dt || 'mezcla');
+  };
+  draw();
+  if (!view.duels && !view.loading) {
+    view.loading = true;
+    sbRpc('my_duels', { p_player: settings.playerId }).then((x) => { view.duels = x || []; }).catch((e) => { view.err = e.message; })
+      .finally(() => { view.loading = false; if (view.name === 'compete') draw(); });
+  }
+};
+async function createDuel(topicKey) {
+  const btn = document.getElementById('newDuel'), msg = document.getElementById('duelMsg');
+  if (!settings.name) { msg.textContent = 'Primero poné tu nombre en Inicio o en Configuración.'; return; }
+  btn.disabled = true; msg.textContent = 'Armando las preguntas…';
+  try {
+    const tema = topicKey === 'mezcla' ? 'mezcla de matemática, lengua, ciencias naturales, historia argentina, geografía y cultura general' : duelTopicName(topicKey);
+    const j = await askJSON('Sos un maestro de escuela primaria argentina que arma juegos de preguntas.',
+      `Armá ${DUEL_N} preguntas de enseñanza básica (escuela primaria) sobre: ${tema}. Cortas (máximo 15 palabras), claras, con UNA sola respuesta correcta y corta (una palabra, un número o una frase corta), que se pueda contestar en menos de 20 segundos. Variadas, de fácil a media. Nada de opción múltiple. ${Q_RULE} Forma: {"questions":["...","..."]}`, 900, FAST_MODEL);
+    const qs = (j.questions || []).filter((q) => typeof q === 'string' && q.trim()).slice(0, DUEL_N);
+    if (qs.length < 3) throw new Error('No pude armar las preguntas. Probá de nuevo.');
+    const id = await sbRpc('create_duel', { p_player: settings.playerId, p_name: settings.name, p_topic: duelTopicName(topicKey), p_diff: 'basico', p_questions: qs });
+    if (!id) throw new Error('No pude crear el duelo. Probá de nuevo.');
+    go('duel', { id, fresh: true });
+  } catch (e) { btn.disabled = false; msg.innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+function shareDuel(d) {
+  shareApp(`⚔️ ${settings.name || 'Alguien'} te desafía a un duelo de ${d.topic} en Profe de Voz: ${d.questions.length} preguntas, 20 segundos cada una. ¿Te animás?`, duelLink(d.id));
+}
+
+// Pantalla del duelo: marcador y botón para jugar o compartir. Se actualiza solo mientras alguien juega.
+views.duel = () => {
+  setHeader('Duelo');
+  const draw = () => {
+    const d = view.d;
+    if (!d) { app.innerHTML = `<p class="muted">${view.err ? esc(view.err) : 'Cargando duelo…'}</p>`; return; }
+    const me = d.results.find((r) => r.me), rs = d.results, top = rs[0];
+    const allDone = rs.length > 1 && rs.every((r) => r.done);
+    const verdict = !me || !me.done ? '' : rs.length < 2 ? 'Esperando que alguien acepte el desafío…'
+      : !allDone ? 'Tu rival todavía está jugando…' : top.me ? '🏆 ¡Ganaste!' : rs.filter((r) => r.points === top.points && r.seconds === top.seconds).length > 1 ? '🤝 ¡Empate!' : `🏆 Ganó ${esc(top.name)}`;
+    app.innerHTML = `
+      <div class="card ask-card"><div class="ask-q">⚔️ ${esc(d.topic)}</div>
+        <div class="muted small">Desafío de ${esc(d.mine ? 'vos' : d.creator_name)} · ${d.questions.length} preguntas · ${DUEL_T} s cada una</div></div>
+      ${verdict ? `<div class="duel-verdict">${verdict}</div>` : ''}
+      <div class="duel-board">${rs.length ? rs.map((r, i) => `<div class="duel-score ${r.me ? 'me' : ''}"><span class="duel-pos">${i + 1}</span><b class="grow">${esc(r.me ? 'Vos' : r.name)}</b>
+        <span class="muted small">${r.done ? secs(r.seconds) : `jugando ${r.cum.length}/${d.questions.length}`}</span><span class="duel-pts">${r.points}</span></div>`).join('') : '<p class="muted">Nadie jugó todavía.</p>'}</div>
+      ${!me || !me.done ? `<button class="block" id="playDuel" style="margin-top:12px">${me ? 'Seguir jugando' : '¡Jugar ahora!'} →</button>` : ''}
+      <button class="block ${me && me.done ? '' : 'soft'}" id="shareDuel" style="margin-top:8px">📤 Desafiar a alguien con este duelo</button>
+      <button class="block soft" id="toComp" style="margin-top:8px">⚔️ Volver a Competencia</button>`;
+    const pd = document.getElementById('playDuel');
+    if (pd) pd.onclick = () => { if (me) toast('Ya habías empezado este duelo: cada uno juega una sola vez, así que queda con lo que tenías.'); startDuelPlay(d, me); };
+    document.getElementById('shareDuel').onclick = () => shareDuel(d);
+    document.getElementById('toComp').onclick = () => { stack.length = 0; view = { name: 'home' }; go('compete'); };
+  };
+  const load = () => sbRpc('get_duel', { p_id: view.id, p_player: settings.playerId })
+    .then((d) => { if (!d) throw new Error('No encontré ese duelo, o todavía no tenés acceso a la app.'); view.d = d; view.err = null; })
+    .catch((e) => { view.err = e.message; })
+    .finally(() => { if (view.name === 'duel') draw(); });
+  draw();
+  if (!view.d) load();
+  stopDuelPoll();
+  duelPoll = setInterval(() => { if (view.name !== 'duel') return stopDuelPoll(); if (view.d && view.d.results.length > 1 && view.d.results.every((r) => r.done)) return; load(); }, 3000);
+};
+function startDuelPlay(d, me) {
+  if (me) { // ya lo empezó en otro momento: no se puede repetir, se cierra con lo que tenía
+    sbRpc('duel_progress', { p_id: d.id, p_player: settings.playerId, p_name: settings.name, p_points: me.points, p_avg: me.avg || 0, p_seconds: me.seconds, p_answers: me.cum.map((c) => ({ cum: c })), p_done: true }).catch(() => {});
+    view.d = null; return render();
+  }
+  go('duelPlay', { id: d.id, d, idx: 0, ans: [], t0: 0, total: 0, rival: null }, false);
+}
+// Juego: pregunta, cuenta regresiva de 20 que suena, y arriba el marcador tuyo y del rival.
+views.duelPlay = () => {
+  const d = view.d, i = view.idx, q = d.questions[i];
+  setHeader(`Duelo · ${i + 1} de ${d.questions.length}`);
+  const myPts = view.ans.reduce((a, x) => a + (x.pts || 0), 0);
+  view.rival = rivalNow();
+  app.innerHTML = `
+    <div class="duel-live">
+      <div class="duel-live-box me"><div class="small">Vos</div><b id="myPts">${myPts}</b><div class="duel-dots">${d.questions.map((_, k) => `<i class="${view.ans[k] ? (view.ans[k].pts == null ? 'wait' : view.ans[k].c >= 6 ? 'ok' : 'bad') : ''}"></i>`).join('')}</div></div>
+      <div class="duel-vs">VS</div>
+      <div class="duel-live-box"><div class="small" id="rivName">${view.rival ? esc(view.rival.name) : 'Rival'}</div><b id="rivPts">${view.rival ? view.rival.shown : '–'}</b><div class="small muted" id="rivNote">${view.rival ? view.rival.note : 'todavía no jugó'}</div></div>
+    </div>
+    <div class="card duel-q"><div style="font-size:20px;font-weight:700">${esc(q)}</div></div>
+    <textarea id="dans" rows="2" placeholder="Escribí o dictá tu respuesta"></textarea>
+    <button class="block" id="dsend" style="margin-top:8px">Responder →</button>`;
+  const inp = document.getElementById('dans'), send = document.getElementById('dsend');
+  inp.focus();
+  view.t0 = Date.now();
+  let sent = false;
+  const answer = () => {
+    if (sent) return; sent = true; clearCountdown();
+    const used = Math.min(DUEL_T, Math.round((Date.now() - view.t0) / 1000)), text = inp.value.trim() || 'no sé';
+    const k = view.idx, a = { text, used, pts: null, c: 0 };
+    view.ans[k] = a; view.total += used;
+    gradeDuel(d, k, a);
+    if (k + 1 < d.questions.length) { view.idx++; render(); } else finishDuelPlay();
+  };
+  send.onclick = answer;
+  inp.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); answer(); } };
+  startCountdown(Promise.resolve(), answer, true);
+  pollRival();
+};
+async function gradeDuel(d, k, a) {
+  try {
+    const g = await askJSON('Corregís respuestas de un juego de preguntas de escuela primaria. Sé justo: aceptá sinónimos, faltas de ortografía y respuestas dictadas por voz. "no sé" o vacío es 0.',
+      `Pregunta: ${d.questions[k]}\nRespuesta: ${a.text}\nForma: {"c": nota entera de 0 a 10 (10 = correcta, 5 = a medias, 0 = mal)}`, 120, FAST_MODEL);
+    a.c = Math.max(0, Math.min(10, Math.round(+g.c || 0)));
+  } catch { a.c = 0; }
+  a.pts = a.c * 10 + (a.c >= 6 ? DUEL_T - a.used : 0);
+  if (view.name === 'duelPlay' && view.d === d) updateDuelLive();
+  saveDuelProgress(d, false);
+}
+function updateDuelLive() {
+  const el = document.getElementById('myPts'); if (!el) return;
+  const pts = view.ans.reduce((a, x) => a + ((x && x.pts) || 0), 0);
+  if (el.textContent !== String(pts)) { el.textContent = pts; el.classList.remove('beat'); void el.offsetWidth; el.classList.add('beat'); }
+  document.querySelectorAll('.duel-dots i').forEach((dot, k) => { const x = view.ans[k]; dot.className = x ? (x.pts == null ? 'wait' : x.c >= 6 ? 'ok' : 'bad') : ''; });
+  paintRival();
+}
+function duelState(st) {
+  const done = st.ans.filter((x) => x && x.pts != null);
+  let cum = 0; const list = [];
+  for (const x of st.ans) { if (!x || x.pts == null) break; cum += x.pts; list.push({ cum }); }
+  return { points: done.reduce((s, x) => s + x.pts, 0), avg: done.length ? average(done.map((x) => x.c)) : 0, list };
+}
+let duelCur = null;
+function saveDuelProgress(d, done) {
+  const st = duelCur && duelCur.d === d ? duelCur : view;
+  const s = duelState(st);
+  return sbRpc('duel_progress', { p_id: d.id, p_player: settings.playerId, p_name: settings.name, p_points: s.points, p_avg: s.avg, p_seconds: st.total, p_answers: s.list, p_done: !!done }).catch(() => {});
+}
+// El rival "va saliendo" al mismo ritmo que vos: si ya terminó, ves sus puntos hasta tu misma pregunta; si está jugando, sus puntos de ahora.
+function rivalNow() {
+  const others = (view.rivalRows || []).filter((r) => !r.me); if (!others.length) return null;
+  const n = view.d.questions.length, mine = view.ans.filter((x) => x && x.pts != null).length;
+  const shownOf = (r) => (r.done ? (mine ? r.cum[Math.min(mine, r.cum.length) - 1] || 0 : 0) : r.points);
+  const best = others.map((r) => ({ r, s: shownOf(r) })).sort((a, b) => b.s - a.s)[0];
+  return { name: best.r.name, shown: best.s, note: best.r.done ? `en la pregunta ${Math.min(mine, best.r.cum.length)} de ${n}` : `respondió ${best.r.cum.length} de ${n}` };
+}
+function paintRival() {
+  view.rival = rivalNow(); if (!view.rival) return;
+  const a = document.getElementById('rivPts'), nm = document.getElementById('rivName'), o = document.getElementById('rivNote'); if (!a) return;
+  if (a.textContent !== String(view.rival.shown)) { a.textContent = view.rival.shown; a.classList.remove('beat'); void a.offsetWidth; a.classList.add('beat'); }
+  nm.textContent = view.rival.name; o.textContent = view.rival.note;
+}
+function pollRival() {
+  stopDuelPoll();
+  const tick = () => sbRpc('get_duel', { p_id: view.id, p_player: settings.playerId }).then((d) => {
+    if (!d || view.name !== 'duelPlay') return;
+    view.rivalRows = d.results; paintRival();
+  }).catch(() => {});
+  tick(); duelPoll = setInterval(() => { if (view.name !== 'duelPlay') return stopDuelPoll(); tick(); }, 2500);
+}
+function finishDuelPlay() {
+  const st = view, d = view.d; duelCur = st; stopDuelPoll();
+  app.innerHTML = '<div class="card" style="text-align:center"><b>Corrigiendo tus respuestas…</b></div>';
+  const wait = setInterval(() => {
+    if (st.ans.some((x) => x.pts == null)) return;
+    clearInterval(wait);
+    saveDuelProgress(d, true).then(() => { stack.length = 0; view = { name: 'home' }; stack.push(view); go('duel', { id: d.id }, false); });
+  }, 300);
+}
 
 // ---------- Exámenes ----------
 const EXAMS = {

@@ -233,6 +233,24 @@
 @keyframes flo{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-18%) rotate(4deg)}}
 @keyframes stomp{0%,100%{transform:scale(1) translateY(0)}30%{transform:scale(1.18) translateY(-8%)}55%{transform:scale(.9,1.1) translateY(4%)}}
 @keyframes spin{0%{transform:rotate(0) scale(1)}50%{transform:rotate(180deg) scale(1.2)}100%{transform:rotate(360deg) scale(1)}}
+.duel-verdict{text-align:center;font-size:24px;font-weight:800;margin:6px 0 10px}
+.duel-board{display:flex;flex-direction:column;gap:8px}
+.duel-score{display:flex;align-items:center;gap:10px;background:#fff;border-radius:14px;padding:12px 14px;border:2px solid #eee}
+.duel-score.me{border-color:var(--accent);background:var(--accent-soft)}
+.duel-pos{width:26px;height:26px;border-radius:50%;background:#f1f1f1;display:grid;place-items:center;font-weight:800;font-size:13px}
+.duel-score .grow{flex:1}
+.duel-pts{font-size:22px;font-weight:800;min-width:48px;text-align:right}
+.duel-live{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.duel-live-box{flex:1;text-align:center;background:#fff;border-radius:16px;padding:10px 6px;border:2px solid #eee}
+.duel-live-box.me{border-color:var(--accent)}
+.duel-live-box b{display:block;font-size:30px;line-height:1.1}
+.duel-live-box b.beat{animation:bounceIn .5s}
+.duel-vs{font-weight:900;color:var(--muted)}
+.duel-dots{display:flex;justify-content:center;gap:4px;margin-top:4px}
+.duel-dots i{width:9px;height:9px;border-radius:50%;background:#e5e5e5}
+.duel-dots i.ok{background:#2fb380}.duel-dots i.bad{background:#e05555}.duel-dots i.wait{background:#f6c344}
+.duel-q{min-height:90px;display:flex;align-items:center}
+#dans{width:100%;font:inherit;font-size:18px;padding:12px;border-radius:12px;border:2px solid #ddd;box-sizing:border-box}
 </style>
 </head>
 <body>
