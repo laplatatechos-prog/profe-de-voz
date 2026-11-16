@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 17;
+const APP_VERSION = 18;
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
 const tint = (i) => PALETTE[i % PALETTE.length];
 const PASS = 6; // nota mínima para aprobar el examen de etapa
@@ -371,9 +371,10 @@ views.home = () => {
     ${!settings.name ? `<div class="card name-card"><b>👋 ¡Hola! ¿Cómo te llamás?</b>
       <div class="row" style="margin-top:10px"><input class="grow" id="nameInput" placeholder="Tu nombre"><button id="nameGo">Listo</button></div></div>`
       : `<div class="hello">Hola, ${esc(settings.name)} 👋</div>`}
-    <h2>Nuevo tema</h2>
-    <div class="card">
-      <div class="row"><input class="grow" id="topicInput" placeholder="¿Qué querés aprender? Ej: inteligencia artificial"><button id="topicGo">Crear</button></div>
+    <div class="card ask-card">
+      <div class="ask-q">${settings.name ? esc(settings.name) + ', ¿qué' : '¿Qué'} querés estudiar hoy? 📚</div>
+      <input id="topicInput" class="ask-input" placeholder="Escribí o dictá un tema. Ej: reels, inteligencia artificial">
+      <button id="topicGo" class="block" style="margin-top:10px">Empezar a estudiar →</button>
       <div id="homeStatus" class="muted small" style="margin-top:8px"></div>
     </div>
     <h2>Mis áreas</h2>
@@ -384,6 +385,7 @@ views.home = () => {
   const ts = document.getElementById('toSettings'); if (ts) ts.onclick = (e) => { e.preventDefault(); go('settings'); };
   app.querySelectorAll('[data-sid]').forEach((el) => el.onclick = () => go('subject', { sid: el.dataset.sid }));
   const inp = document.getElementById('topicInput');
+  if (settings.name && settings.autoRead && !view.asked) { view.asked = true; speak(`${settings.name}, ¿qué querés estudiar hoy?`); }
   inp.onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('topicGo').click(); };
   document.getElementById('topicGo').onclick = () => { const t = inp.value.trim(); if (t) createSubject(t); };
 };
