@@ -3,6 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
+const APP_VERSION = 5;
 const PASS = 6; // nota mínima para aprobar el examen de etapa
 
 const app = document.getElementById('app');
@@ -14,7 +15,7 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 let subjects = store.get('subjects', []);
-let settings = Object.assign({ key: '', rate: 1, voiceURI: '', autoRead: false }, store.get('settings', {}));
+let settings = Object.assign({ key: '', rate: 1, voiceURI: '', autoRead: false, pitch: 1 }, store.get('settings', {}));
 const save = () => { store.set('subjects', subjects); store.set('settings', settings); };
 
 // Adaptar áreas creadas con la versión anterior (etapas sin módulos).
@@ -67,7 +68,12 @@ const qualityOf = (v) => (QUALITY.test(v.name) ? 2 : 0) + (v.localService ? 0 : 
 
 let voices = [];
 function loadVoices() { voices = 'speechSynthesis' in window ? speechSynthesis.getVoices() : []; }
-if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = () => { loadVoices(); if (view.name === 'settings') render(); }; }
+if ('speechSynthesis' in window) {
+  loadVoices();
+  speechSynthesis.onvoiceschanged = () => { loadVoices(); if (view.name === 'settings') render(); };
+  // En Android las voces a veces tardan en aparecer: reintentamos unos segundos.
+  let tries = 0; const t = setInterval(() => { const n = voices.length; loadVoices(); if (voices.length !== n && view.name === 'settings') render(); if (++tries > 10) clearInterval(t); }, 500);
+}
 function spanishVoices() {
   return voices.filter((v) => /^es/i.test(v.lang)).sort((a, b) => qualityOf(b) - qualityOf(a) || /AR|419/i.test(b.lang) - /AR|419/i.test(a.lang) || a.name.localeCompare(b.name));
 }
@@ -95,6 +101,7 @@ function speakBrowser(clean) {
     const u = new SpeechSynthesisUtterance(parts[i++].trim());
     if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'es-AR';
     u.rate = settings.rate || 1;
+    u.pitch = settings.pitch || 1;
     u.onend = next; u.onerror = next;
     speechSynthesis.speak(u);
   };
@@ -146,9 +153,15 @@ views.settings = () => {
   app.innerHTML = `
     <h2>Voz</h2>
     <div class="card">
-      <label style="margin-top:0">Voz del profe</label>
+      <label style="margin-top:0">Tipo de voz</label>
+      <div class="seg">${[['Grave (hombre)', 0.6], ['Normal', 1], ['Aguda', 1.35]].map(([n, p]) => `<button data-pitch="${p}" class="${Math.abs((settings.pitch || 1) - p) < 0.01 ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <label>Tono: <b id="pitchVal">${(settings.pitch || 1).toFixed(2)}</b></label>
+      <div class="row"><span class="muted small">Grave</span><input class="grow" id="pitch" type="range" min="0.3" max="1.6" step="0.05" value="${settings.pitch || 1}"><span class="muted small">Aguda</span></div>
+      <p class="muted small">"Grave" hace que cualquier voz suene más gruesa, parecida a una voz de hombre. Funciona en cualquier teléfono.</p>
+      <label>Voz del profe</label>
       ${list.length ? `<select id="voiceSel">${list.map((x) => `<option value="${esc(x.voiceURI)}" ${v && v.voiceURI === x.voiceURI ? 'selected' : ''}>${esc(label(x))}</option>`).join('')}</select>`
-        : '<p class="muted">No encontré voces en español en este navegador.</p>'}
+        : '<p class="muted">Todavía no cargaron las voces de este teléfono. Esperá unos segundos o cerrá y abrí la app.</p>'}
+      ${list.length === 1 ? '<p class="muted small">Tu teléfono le da a Chrome una sola voz en español. Para tener más voces, seguí los pasos de más abajo.</p>' : ''}
       <p class="muted small">★ = voz de mejor calidad. ${hasMale ? '' : 'Este navegador no trae voces de hombre en español. '}Más abajo te explico cómo sumar voces de hombre gratis.</p>
       <button class="plain small" id="allVoices" style="padding-left:0">${view.allVoices ? 'Mostrar solo voces en español' : 'Mostrar todas las voces'}</button>
       <label>Velocidad: <b id="rateVal">${settings.rate.toFixed(2)}x</b></label>
@@ -176,10 +189,15 @@ views.settings = () => {
       <input id="keyInput" type="password" placeholder="sk-ant-..." autocomplete="off" value="${esc(settings.key)}">
       <div class="row" style="margin-top:10px"><button id="saveKey">Guardar</button><span id="keyMsg" class="muted"></span></div>
       <p class="muted small">Para sacarla: platform.claude.com → Claves (API Keys) → Crear clave. Empieza con sk-ant-.</p>
-    </div>`;
+    </div>
+    <p class="muted small" style="text-align:center;margin-top:24px">Versión ${APP_VERSION}</p>
+`;
   const $ = (id) => document.getElementById(id);
   if ($('voiceSel')) $('voiceSel').onchange = () => { settings.voiceURI = $('voiceSel').value; save(); speak('Hola, esta es mi voz.'); };
   if ($('allVoices')) $('allVoices').onclick = () => { view.allVoices = !view.allVoices; render(); };
+  app.querySelectorAll('[data-pitch]').forEach((b) => b.onclick = () => { settings.pitch = +b.dataset.pitch; save(); render(); speak('Hola, así sueno ahora.'); });
+  $('pitch').oninput = (e) => { settings.pitch = +e.target.value; $('pitchVal').textContent = settings.pitch.toFixed(2); app.querySelectorAll('[data-pitch]').forEach((b) => b.classList.toggle('on', Math.abs(settings.pitch - +b.dataset.pitch) < 0.01)); save(); };
+  $('pitch').onchange = () => speak('Hola, así sueno ahora.');
   $('rate').oninput = (e) => { settings.rate = +e.target.value; $('rateVal').textContent = settings.rate.toFixed(2) + 'x'; save(); };
   $('rate').onchange = () => speak('Así suena esta velocidad.');
   $('autoRead').onchange = (e) => { settings.autoRead = e.target.checked; save(); };
@@ -487,5 +505,10 @@ views.result = () => {
 const fmt = (n) => (Math.round(n * 10) / 10).toString().replace('.', ',');
 
 // ---------- Arranque ----------
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  // Busca versiones nuevas cada vez que se abre la app y recarga sola si hay una.
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => r.update()).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !window.__reloaded) { window.__reloaded = true; location.reload(); } });
+}
 render();
