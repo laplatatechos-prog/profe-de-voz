@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 10;
+const APP_VERSION = 11;
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
 const tint = (i) => PALETTE[i % PALETTE.length];
 const PASS = 6; // nota mínima para aprobar el examen de etapa
@@ -17,7 +17,8 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 let subjects = store.get('subjects', []);
-let settings = Object.assign({ key: '', rate: 1, voiceURI: '', autoRead: false, length: 'corto' }, store.get('settings', {}));
+let settings = Object.assign({ key: '', rate: 1, voiceURI: '', autoRead: true, length: 'corto' }, store.get('settings', {}));
+if (!settings.autoOn) { settings.autoRead = true; settings.autoOn = true; try { localStorage.setItem('settings', JSON.stringify(settings)); } catch {} } // pedido: leer cada tema solo
 settings.pitch = 1; // el tono grave sonaba mal: siempre tono natural
 if (!settings.length) settings.length = 'corto';
 const save = () => { store.set('subjects', subjects); store.set('settings', settings); };
@@ -89,7 +90,12 @@ function currentVoice() {
 }
 
 let speakingBtn = null, speakToken = 0, audio = null;
+function setSpeaking(on) {
+  const b = document.getElementById('stopFab');
+  if (b) b.classList.toggle('on', on);
+}
 function speak(text, btn) {
+  setTimeout(() => setSpeaking(true), 0);
   const wasThis = speakingBtn && speakingBtn === btn;
   stopSpeaking();
   if (wasThis) return; // segundo toque = parar
@@ -187,6 +193,7 @@ function stopSpeaking() {
   speakToken++;
   if (audio) { audio.pause(); audio = null; }
   if ('speechSynthesis' in window) speechSynthesis.cancel();
+  setSpeaking(false);
   if (speakingBtn) speakingBtn.textContent = '▶ Escuchar';
   speakingBtn = null;
 }
@@ -274,7 +281,7 @@ views.settings = () => {
       <div class="seg">${[['corto', 'Muy cortas'], ['normal', 'Normales']].map(([k, n]) => `<button data-len="${k}" class="${settings.length === k ? 'on' : ''}">${n}</button>`).join('')}</div>
       <label>Velocidad: <b id="rateVal">${settings.rate.toFixed(2)}x</b></label>
       <div class="row"><span class="muted small">Lenta</span><input class="grow" id="rate" type="range" min="0.6" max="1.8" step="0.05" value="${settings.rate}"><span class="muted small">Rápida</span></div>
-      <label class="row" style="gap:10px;color:var(--text)"><input type="checkbox" id="autoRead" style="width:auto" ${settings.autoRead ? 'checked' : ''}> Leer en voz alta los módulos automáticamente</label>
+      <label class="row" style="gap:10px;color:var(--text)"><input type="checkbox" id="autoRead" style="width:auto" ${settings.autoRead ? 'checked' : ''}> Leer cada tema en voz alta automáticamente</label>
       <div style="margin-top:14px"><button class="soft" id="testVoice">▶ Probar voz</button></div>
     </div>
 
@@ -284,6 +291,11 @@ views.settings = () => {
       <input id="keyInput" type="password" placeholder="sk-ant-..." autocomplete="off" value="${esc(settings.key)}">
       <div class="row" style="margin-top:10px"><button id="saveKey">Guardar</button><span id="keyMsg" class="muted"></span></div>
       <p class="muted small">Para sacarla: platform.claude.com → Claves (API Keys) → Crear clave. Empieza con sk-ant-.</p>
+    </div>
+    <h2>Borrar</h2>
+    <div class="card">
+      <p class="muted small" style="margin-top:0">Borra todas las áreas, módulos y puntajes guardados en este equipo. Tu clave y tu voz elegida quedan.</p>
+      <button class="danger block" id="wipe">🗑️ Borrar todo lo aprendido</button>
     </div>
     <p class="muted small" style="text-align:center;margin-top:24px">Versión ${APP_VERSION}</p>
 `;
@@ -321,6 +333,10 @@ views.settings = () => {
   $('rate').onchange = () => speak('Así suena esta velocidad.');
   $('autoRead').onchange = (e) => { settings.autoRead = e.target.checked; save(); };
   $('testVoice').onclick = () => speak('Hola, soy tu profe. Vamos a aprender juntos, de a poco.', $('testVoice'));
+  $('wipe').onclick = () => {
+    if (!confirm('¿Seguro que querés borrar todas las áreas y puntajes? No se puede deshacer.')) return;
+    subjects = []; save(); stack.length = 0; view = { name: 'home' }; render(); toast('Listo, se borró todo.');
+  };
   $('saveKey').onclick = async () => {
     settings.key = $('keyInput').value.trim(); save();
     $('keyMsg').textContent = 'Probando…';
@@ -605,6 +621,21 @@ const LEVELS = [
   ['Nivel Tortuga', '🐢'], ['Nivel Casi Casi', '🤏'], ['Nivel Aprendiz Ninja', '🥷'], ['Nivel Crack', '😎'],
   ['Nivel Genio', '🧠'], ['Nivel Leyenda', '🦸'], ['Nivel Dios', '⚡'],
 ];
+// Un chiste por nivel (se elige uno al azar).
+const JOKES = [
+  ['Tu cerebro está en modo zombie: camina, pero no piensa. ¡Dale que lo revivimos!', 'Hasta un zombie sabe más que esto… bueno, no, pero casi. ¡Otra vez!'],
+  ['Una piedra respondió igual que vos, y eso que no fue a clase.', 'Firme como una roca… y con la misma cantidad de respuestas.'],
+  ['¿Estabas soñando con el examen? Despertate que vamos de nuevo.', 'Respondiste con los ojos cerrados, se nota. ¡Café y otra vuelta!'],
+  ['Papa tibia: no quema, pero tampoco alimenta. ¡A calentarla!', 'Ni frita ni hervida: papa tibia. Un repaso y salís puré de crack.'],
+  ['Lento pero seguro, como la tortuga… pero la tortuga ganó la carrera. ¡Vos también podés!', 'Vas a paso de tortuga, pero con caparazón firme. ¡Un empujoncito más!'],
+  ['Casi casi… como cuando casi agarrás el colectivo. ¡Corré un poco más!', 'Estuviste a un pelito. Literal, un pelito. ¡Otra y aprobás!'],
+  ['Aprendiz ninja: ya sabés esconderte de los errores, falta pegar la patada final.', 'Tenés el cinturón blanco… y ya se te ve el amarillo asomando.'],
+  ['Crack total. Si seguís así te van a pedir autógrafos en el colectivo.', 'Nivel crack: hasta el profe tomó nota.'],
+  ['Nivel genio: tu cerebro pidió aumento de sueldo.', 'Tan genio que la lámpara te pide deseos a vos.'],
+  ['Leyenda: van a contar historias de este examen en las fogatas.', 'Nivel leyenda. Ya te están haciendo una estatua, tranqui.'],
+  ['Nivel Dios: el examen te pidió disculpas por molestarte.', 'Nivel Dios. Ya no estudiás el tema: el tema te estudia a vos.'],
+];
+const jokeFor = (n) => { const j = JOKES[Math.max(0, Math.min(10, Math.floor(n)))]; return j[Math.floor(Math.random() * j.length)]; };
 const levelOf = (n) => { const [name, emoji] = LEVELS[Math.max(0, Math.min(10, Math.floor(n)))]; return [n, name, emoji]; };
 const modBest = (m) => (m.scores && m.scores.length ? Math.max(...m.scores) : null);
 function stageScore(st) {
@@ -644,15 +675,17 @@ views.result = () => {
   const isMod = view.type === 'modulo';
   const m = isMod ? st.modules[view.mi] : null;
   const lastMod = isMod && view.mi === st.modules.length - 1;
+  if (!view.joke) view.joke = jokeFor(view.score);
   const msg = ok ? (view.unlocked ? '¡Terminaste la etapa! Se habilitó la siguiente.' : view.score >= 8 ? '¡Excelente!' : '¡Muy bien!') : 'Todavía no. Repetí el módulo y probá de nuevo.';
   app.innerHTML = `
     <div class="result-screen ${ok ? 'pass' : 'fail'}">
       <div class="result-inner">
         <div class="result-topic">${isMod ? esc(m.title) : esc(cfg.name) + ' · ' + esc(st.title)}</div>
         <div class="result-emoji">${levelOf(view.score)[2]}</div>
-        <div class="result-level">${levelOf(view.score)[1]}</div>
         <div class="result-label">Te sacaste</div>
         <div class="result-num">${fmt(view.score)}</div>
+        <div class="result-level">Quedaste en ${levelOf(view.score)[1]}</div>
+        <div class="result-joke">${esc(view.joke)}</div>
         <div class="result-msg">${msg}</div>
         <div class="result-sub"><span>Corrección <b>${fmt(view.correct)}</b></span><span>Claridad <b>${fmt(view.clarity)}</b></span></div>
         ${isMod ? `
@@ -664,7 +697,7 @@ views.result = () => {
           <button class="block result-btn ghost" id="again">Elegir otro examen</button>`}
       </div>
     </div>`;
-  speak(`Te sacaste ${fmt(view.score)}. ${levelOf(view.score)[1]}. ${msg}`);
+  speak(`Te sacaste ${fmt(view.score)}. Quedaste en ${levelOf(view.score)[1]}. ${view.joke} ${msg}`);
   if (ok) confetti();
   document.getElementById('toSubj').onclick = () => { stack.length = 0; view = { name: 'home' }; go('subject', { sid: s.id }); };
   const ag = document.getElementById('again'); if (ag) ag.onclick = () => go('examMenu', { sid: s.id, si: view.si }, false);
@@ -673,6 +706,8 @@ views.result = () => {
 };
 const fmt = (n) => (Math.round(n * 10) / 10).toString().replace('.', ',');
 
+// Botón fijo para parar la voz
+document.getElementById('stopFab').onclick = () => stopSpeaking();
 // ---------- Arranque ----------
 if ('serviceWorker' in navigator) {
   // Busca versiones nuevas cada vez que se abre la app y recarga sola si hay una.
