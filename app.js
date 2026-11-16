@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 40;
+const APP_VERSION = 41;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -994,13 +994,14 @@ views.duel = () => {
       <div class="card ask-card"><div class="ask-q">⚔️ ${esc(d.topic)}</div>
         <div class="muted small">Desafío de ${esc(d.mine ? 'vos' : d.creator_name)}${d.target_name ? ` para ${esc(d.for_me ? 'vos' : d.target_name)}` : ''} · ${d.questions.length} preguntas · ${DUEL_T} s cada una</div></div>
       ${verdict ? `<div class="duel-verdict">${verdict}</div>` : ''}
-      <div class="duel-board">${rs.length ? rs.map((r, i) => `<div class="duel-score ${r.me ? 'me' : ''}"><span class="duel-pos">${i + 1}</span><b class="grow">${esc(r.me ? 'Vos' : r.name)}</b>
+      <div class="duel-board">${rs.length ? rs.map((r, i) => `<div class="duel-score ${r.me ? 'me' : ''} ${allDone ? 'final' : ''}"><span class="duel-pos">${i + 1}</span>${allDone ? `<span class="duel-char"><span class="anim-loop ${animOf(duelChar(d, r).sound)}">${duelChar(d, r).emoji}</span></span>` : ''}<b class="grow">${esc(r.me ? 'Vos' : r.name)}${allDone ? `<span class="duel-sos">${esc(duelChar(d, r).sos)} · nota ${fmt(r.avg || 0)}</span>` : ''}</b>
         <span class="muted small">${r.done ? secs(r.seconds) : `jugando ${r.cum.length}/${d.questions.length}`}</span><span class="duel-pts">${r.points}</span></div>`).join('') : '<p class="muted">Nadie jugó todavía.</p>'}</div>
       ${!me || !me.done ? `<button class="block" id="playDuel" style="margin-top:12px">${me ? 'Seguir jugando' : '¡Jugar ahora!'} →</button>` : ''}
       <button class="block ${me && me.done ? '' : 'soft'}" id="shareDuel" style="margin-top:8px">📤 Desafiar a alguien con este duelo</button>
       <button class="block soft" id="duelChat" style="margin-top:8px">💬 Chat del duelo</button>
       <button class="block soft" id="toComp" style="margin-top:8px">⚔️ Volver a Competencia</button>`;
     document.getElementById('duelChat').onclick = () => go('chat', { room: d.id, title: d.topic });
+    if (allDone && verdict) announceDuel(d, rs);
     const pd = document.getElementById('playDuel');
     if (pd) pd.onclick = () => { if (me) toast('Ya habías empezado este duelo: cada uno juega una sola vez, así que queda con lo que tenías.'); startDuelPlay(d, me); };
     document.getElementById('shareDuel').onclick = () => shareDuel(d);
@@ -1015,6 +1016,26 @@ views.duel = () => {
   stopDuelPoll();
   duelPoll = setInterval(() => { if (view.name !== 'duel') return stopDuelPoll(); if (view.d && view.d.results.length > 1 && view.d.results.every((r) => r.done)) return; load(); }, 3000);
 };
+// Personaje de cada jugador según su nota (0 a 10). Siempre el mismo para ese duelo, así los dos ven lo mismo.
+function duelChar(d, r) {
+  const l = levelFor(r.avg || 0), key = d.id + '|' + r.name;
+  let h = 0; for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const c = l.chars[h % l.chars.length];
+  return { name: c[0], sos: c[1], emoji: c[2], sound: c[4] };
+}
+// Al terminar: trompetas y la voz dice quién ganó, con el personaje de cada uno. Una sola vez por duelo.
+function announceDuel(d, rs) {
+  const said = store.get('profe-duel-said', []);
+  if (said.includes(d.id)) return;
+  store.set('profe-duel-said', said.concat(d.id).slice(-100));
+  const top = rs[0], tie = rs.length > 1 && rs[1].points === top.points && rs[1].seconds === top.seconds;
+  const who = (r) => (r.me ? 'vos' : r.name);
+  const sos = (r) => duelChar(d, r).sos.replace(/^Sos /, r.me ? 'sos ' : 'es ');
+  const head = tie ? '¡Empate!' : top.me ? '¡Ganaste vos!' : `¡Ganó ${top.name}!`;
+  const lines = rs.map((r) => `${r.me ? 'Vos' : r.name}: ${r.points} puntos, ${r.me ? 'y ' : 'y '}${sos(r)}.`).join(' {{p}} ');
+  speak(`{{s:fanfare}} ${head} {{p}} ${lines}`);
+  if (top.me || tie) confetti();
+}
 function startDuelPlay(d, me) {
   if (me) { // ya lo empezó en otro momento: no se puede repetir, se cierra con lo que tenía
     sbRpc('duel_progress', { p_id: d.id, p_player: settings.playerId, p_name: settings.name, p_points: me.points, p_avg: me.avg || 0, p_seconds: me.seconds, p_answers: me.cum.map((c) => ({ cum: c })), p_done: true }).catch(() => {});
