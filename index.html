@@ -218,6 +218,21 @@
 .char-card.got{border-color:#7bd88f;background:#f1fcf3;color:#222}
 .char-emoji{font-size:30px}.char-got{position:absolute;top:4px;right:8px;color:#2a9d4b;font-weight:800}
 .final-card{border:2px solid #ffc94d;background:#fff8e6}
+.sug-wrap{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.chip.sug{font-size:14px;padding:7px 12px}
+/* animaciones de personajes (solo transform: livianas) */
+.a-hop,.a-wig,.a-flo,.a-stomp,.a-spin{display:inline-block;transform-origin:50% 90%}
+.char-emoji.a-hop,.mini-emo.a-hop{animation:hop .5s ease-out 3}.char-emoji.a-wig,.mini-emo.a-wig{animation:wig .35s ease-in-out 4}
+.char-emoji.a-flo,.mini-emo.a-flo{animation:flo 1.2s ease-in-out 2}.char-emoji.a-stomp,.mini-emo.a-stomp{animation:stomp .45s ease-out 3}
+.char-emoji.a-spin,.mini-emo.a-spin{animation:spin .8s ease-in-out 1}
+.anim-loop.a-hop{animation:hop .6s ease-out .8s infinite}.anim-loop.a-wig{animation:wig .4s ease-in-out .8s infinite}
+.anim-loop.a-flo{animation:flo 2s ease-in-out .8s infinite}.anim-loop.a-stomp{animation:stomp .9s ease-out .8s infinite}
+.anim-loop.a-spin{animation:spin 1.6s ease-in-out .8s infinite}
+.char-emoji{display:inline-block}.mini-emo{display:inline-block}
+@keyframes hop{0%,100%{transform:translateY(0) scale(1,1)}15%{transform:translateY(0) scale(1.15,.85)}50%{transform:translateY(-35%) scale(.92,1.1)}80%{transform:translateY(0) scale(1.08,.92)}}
+@keyframes wig{0%,100%{transform:rotate(0)}25%{transform:rotate(-14deg)}75%{transform:rotate(14deg)}}
+@keyframes flo{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-18%) rotate(4deg)}}
+@keyframes stomp{0%,100%{transform:scale(1) translateY(0)}30%{transform:scale(1.18) translateY(-8%)}55%{transform:scale(.9,1.1) translateY(4%)}}
+@keyframes spin{0%{transform:rotate(0) scale(1)}50%{transform:rotate(180deg) scale(1.2)}100%{transform:rotate(360deg) scale(1)}}
 </style>
 </head>
 <body>

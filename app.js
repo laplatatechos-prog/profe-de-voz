@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 35;
+const APP_VERSION = 37;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -646,7 +646,7 @@ views.home = () => {
     return `<div class="card tap tint-${tint(subjects.indexOf(s))}" data-sid="${s.id}">
       <div class="between"><b><span class="emoji">${s.emoji || '📘'}</span> ${esc(s.topic)}</b>${avg != null ? `<span class="pill ${avg >= PASS ? 'ok' : 'bad'}">${levelOf(avg)[2]} ${fmt(avg)}</span>` : ''}</div>
       <div class="bar"><div style="width:${(100 * done) / s.stages.length}%"></div></div>
-      ${avg != null ? `<div class="small" style="margin-top:8px;font-weight:600">${levelOf(avg)[2]} ${levelOf(avg)[1]}</div>` : ''}
+      ${avg != null ? `<div class="small" style="margin-top:8px;font-weight:600"><span class="mini-emo ${animOf(levelFor(avg).chars[0][4])}" style="font-size:22px">${levelOf(avg)[2]}</span> ${levelOf(avg)[1]}</div>` : ''}
       <div class="muted small" style="margin-top:6px">Aprendiste ${done} de ${s.stages.length} etapas${scored.length ? ` · ${((n) => n + (n === 1 ? ' examen rendido' : ' exámenes rendidos'))(s.stages.reduce((n, x) => n + x.exams.length + (x.modules || []).reduce((a, m) => a + (m.scores || []).length, 0), 0))}` : ' · todavía sin exámenes'}</div>
       ${rows ? `<div class="score-list">${rows}</div>` : ''}</div>`;
   }).join('');
@@ -657,7 +657,11 @@ views.home = () => {
     <div class="card ask-card">
       <div class="ask-q">¿Qué querés estudiar hoy? 📚</div>
       <input id="topicInput" class="ask-input" placeholder="Escribí o dictá un tema. Ej: reels, inteligencia artificial">
-      <button id="topicGo" class="block" style="margin-top:10px">Empezar a estudiar →</button>
+      <div class="muted small" style="margin-top:10px">Dificultad:</div>
+      <div class="chips" id="diffChips">${Object.entries(DIFFS).map(([k, d]) => `<button class="chip ${(settings.diff || 'medio') === k ? 'on' : ''}" data-diff="${k}">${d.label}</button>`).join('')}</div>
+      <button id="topicGo" class="block" style="margin-top:4px">Empezar a estudiar →</button>
+      <div class="muted small" style="margin-top:12px">¿No se te ocurre nada? Tocá uno:</div>
+      <div class="sug-wrap">${pickSome(SUGGESTIONS.filter((x) => !subjects.some((s) => s.topic.toLowerCase() === x.toLowerCase())), 6).map((x) => `<button class="chip sug" data-sug="${esc(x)}">${esc(x)}</button>`).join('')}</div>
       <div id="homeStatus" class="muted small" style="margin-top:8px"></div>
     </div>
     <div class="row share-row">${SB_URL ? '<button class="grow rank-cta" id="toRank">🏆 Ranking</button>' : ''}<button class="grow share-cta" id="shareBtn">📤 Compartir la app</button></div>
@@ -676,8 +680,12 @@ views.home = () => {
   if (settings.name && settings.autoRead && !view.asked) { view.asked = true; speak('¿Qué querés estudiar hoy?'); }
   inp.onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('topicGo').click(); };
   document.getElementById('topicGo').onclick = () => { const t = inp.value.trim(); if (t) createSubject(t); };
+  app.querySelectorAll('[data-diff]').forEach((el) => el.onclick = () => { settings.diff = el.dataset.diff; save(); app.querySelectorAll('[data-diff]').forEach((x) => x.classList.toggle('on', x === el)); });
+  app.querySelectorAll('[data-sug]').forEach((el) => el.onclick = () => { inp.value = el.dataset.sug; createSubject(el.dataset.sug); });
 };
 
+const SUGGESTIONS = ['El sistema solar', 'Cómo hacer pan casero', 'Primeros auxilios', 'Los dinosaurios', 'Inglés para viajar', 'Cómo ahorrar plata', 'Historia argentina', 'El cuerpo humano', 'Fotografía con el celular', 'Huerta en casa', 'Los volcanes', 'Cocina básica', 'Ajedrez para principiantes', 'Los océanos', 'Cómo funciona internet', 'Mitología griega', 'Reciclaje', 'Los animales de la selva', 'Matemática del día a día', 'Guitarra para empezar', 'Las emociones', 'Electricidad en casa', 'Los planetas', 'Fútbol: reglas y tácticas', 'Inteligencia artificial', 'Cuidado de mascotas', 'Arte rupestre', 'Música: las notas', 'Nutrición sana', 'El clima y las nubes'];
+function pickSome(xs, n) { const a = xs.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a.slice(0, n); }
 async function createSubject(topic) {
   const st = document.getElementById('homeStatus'), btn = document.getElementById('topicGo');
   st.textContent = `Armando el temario de "${topic}"… (tarda unos segundos)`; btn.disabled = true;
@@ -685,10 +693,10 @@ async function createSubject(topic) {
     const j = await askJSON(
       'Sos un profesor experto que arma planes de estudio para un adulto hispanohablante que estudia desde el celular. ' +
       'Forma: {"topic":"nombre corto","emoji":"un emoji que represente el tema","description":"una frase","stages":[{"title":"...","summary":"una frase","modules":[{"title":"título corto y concreto"}]}]}. ' +
-      'Entre 5 y 8 etapas, de lo básico a lo avanzado. Cada etapa con 3 a 5 módulos MUY cortos (cada uno se lee en 1 o 2 minutos).',
+      'De lo básico a lo avanzado. ' + diffOf(null).plan + ' Cada etapa con 3 a 5 módulos MUY cortos (cada uno se lee en 1 o 2 minutos).',
       'Quiero aprender: ' + topic, 3000);
     const s = {
-      id: Date.now().toString(36), topic: j.topic || topic, emoji: j.emoji || '📘', description: j.description || '', current: 0,
+      id: Date.now().toString(36), diff: settings.diff || 'medio', topic: j.topic || topic, emoji: j.emoji || '📘', description: j.description || '', current: 0,
       stages: j.stages.map((x) => ({ title: x.title, summary: x.summary, done: false, exams: [],
         modules: (x.modules || []).map((m) => ({ title: m.title || m, content: null, seen: false, chat: [] })) })),
     };
@@ -704,7 +712,8 @@ views.subject = () => {
   const done = s.stages.filter((x) => x.done).length;
   app.innerHTML = `
     <div class="card"><div class="muted">${esc(s.description)}</div><div class="bar"><div style="width:${(100 * done) / s.stages.length}%"></div></div>
-      <div class="muted small" style="margin-top:6px">${done} de ${s.stages.length} etapas aprobadas</div></div>
+      <div class="muted small" style="margin-top:6px">${done} de ${s.stages.length} etapas aprobadas</div>
+      <div class="chips" style="margin-top:8px">${Object.entries(DIFFS).map(([k, d]) => `<button class="chip ${(s.diff || 'medio') === k ? 'on' : ''}" data-sdiff="${k}">${d.label}</button>`).join('')}</div></div>
     ${s.stages.map((st, i) => {
       const state = st.done ? 'done' : i === s.current ? 'current' : i > s.current ? 'locked' : '';
       const best = stageScore(st);
@@ -726,6 +735,7 @@ views.subject = () => {
       <button class="block" id="finalGo"><span>${s.finalBest != null ? 'Rendir de nuevo el examen final' : 'Rendir el examen final →'}</span></button></div>` : ''}
     <div style="text-align:center;margin-top:24px"><button class="plain small" id="delSubj">Borrar esta área</button></div>`;
   const fg = document.getElementById('finalGo'); if (fg) fg.onclick = () => startExam(s, s.stages.length - 1, 'final', fg);
+  app.querySelectorAll('[data-sdiff]').forEach((el) => el.onclick = () => { s.diff = el.dataset.sdiff; save(); render(); toast('Dificultad: ' + DIFFS[s.diff].label + '. Se nota en las próximas clases y exámenes.'); });
   app.querySelectorAll('[data-toggle]').forEach((el) => el.onclick = () => {
     const i = +el.dataset.toggle;
     if (i > s.current && !s.stages[i].done) { return; }
@@ -760,11 +770,27 @@ async function ensureModules(s, i) {
 // El profe explica una idea en 1 o 2 frases y enseguida pregunta. Corrige, explica la siguiente idea y vuelve a preguntar.
 // Son 2 pasos por módulo; si el alumno pide más detalle, recién ahí se extiende. Al final: puntaje, nivel y chiste.
 const STEPS = 2;
+const DIFFS = {
+  facil: { label: '🙂 Fácil', plan: 'Nivel FÁCIL: lenguaje muy simple, como para alguien que nunca vio el tema. Entre 4 y 5 etapas.',
+    teach: 'Nivel FÁCIL: explicá con palabras muy simples y ejemplos de todos los días. Preguntas sencillas pero que igual hagan pensar.',
+    q: 'DIFICULTAD: fácil. Preguntas simples sobre lo principal, pero que no se contesten con una sola palabra.', kind: 'preguntas abiertas y sencillas que se respondan en 1 a 2 frases', modLen: '1 o 2 frases', prog: '(de fácil a un poquito más difícil)',
+    grade: 'Corregí con paciencia: si la idea principal está bien, aunque falten detalles, puede sacar 7 u 8. ' },
+  medio: { label: '🤔 Medio', plan: 'Nivel MEDIO. Entre 5 y 7 etapas.',
+    teach: 'Nivel MEDIO: explicá claro y con algún dato concreto.',
+    q: 'DIFICULTAD: media. Las preguntas piden explicar el porqué o el cómo con algún detalle concreto.', kind: 'preguntas abiertas y concretas que se respondan en 2 a 3 frases', modLen: '2 frases', prog: '(de fácil a media)',
+    grade: 'Corregí con justicia: si es correcta pero le faltan detalles importantes, no más de 7. ' },
+  dificil: { label: '🔥 Difícil', plan: 'Nivel DIFÍCIL: más profundo y técnico. Entre 6 y 8 etapas.',
+    teach: 'Nivel DIFÍCIL: explicá con precisión, usando los términos correctos del tema.',
+    q: '', kind: 'preguntas abiertas, difíciles y detalladas que se respondan en 2 a 4 frases', modLen: '2 o 3 frases con detalles', prog: '(de media a difícil)',
+    grade: 'Corregí con exigencia: una respuesta correcta pero vaga o sin detalles no pasa de 6; 9 o 10 solo si es correcta, completa y con detalles precisos. ' },
+};
+const diffOf = (s) => DIFFS[(s && s.diff) || settings.diff || 'medio'] || DIFFS.medio;
 const Q_HARD = 'DIFICULTAD: exigente. Las preguntas tienen que pedir detalles concretos (causas, pasos en orden, diferencias entre dos cosas, datos, consecuencias, un ejemplo real explicado) y no se pueden contestar con una sola palabra ni con algo obvio.';
+DIFFS.dificil.q = Q_HARD;
 const Q_RULE = 'REGLA DE ORO DE LAS PREGUNTAS: la pregunta NUNCA puede contener, insinuar ni dejar adivinar la respuesta. No repitas en la pregunta las palabras clave de la respuesta, no hagas preguntas de sí/no ni de opción múltiple, no pongas la respuesta entre paréntesis o como ejemplo. Preguntá por el porqué, el cómo, para qué sirve, qué pasaría si…, o pedí un ejemplo propio, de modo que haya que pensar o recordar.';
 function learnSystem(s, st, m) {
   return teacher() + `
-Estás enseñando "${s.topic}". Etapa: "${st.title}". Módulo: "${m.title}".
+Estás enseñando "${s.topic}". Etapa: "${st.title}". Módulo: "${m.title}". ${diffOf(s).teach}
 Enseñás este módulo en ${STEPS} pasos, como una charla. En cada paso explicás UNA sola idea en 1 o 2 frases muy cortas (máximo 30 palabras en total) y enseguida hacés UNA pregunta sobre esa idea que haga pensar (no obvia). La pregunta no puede responderse copiando palabras de tu explicación: pedí aplicarla, dar un ejemplo o explicar el porqué con sus palabras. ${Q_RULE}
 Siempre respondés SOLO con JSON válido, sin texto extra:
 - Si el mensaje es "EMPEZAR": {"explain":"idea 1","question":"pregunta 1"}
@@ -796,7 +822,7 @@ function drawTurns() {
   const chat = document.getElementById('chat'); if (!chat) return;
   chat.innerHTML = view.turns.map((t, i) => t.role === 'me'
     ? `<div class="msg me">${esc(t.text)}</div>`
-    : `<div class="msg ai">${t.score != null ? `<div class="mini-score ${t.score >= PASS ? 'ok' : 'bad'}">${t.lv ? t.lv.emoji : levelOf(t.score)[2]} ${fmt(t.score)} · ${esc(t.lv ? t.lv.sos : levelOf(t.score)[3])}</div>${t.joke ? `<div class="joke">${esc(t.joke)}</div>` : ''}${t.gossip ? `<div class="gossip">🗣️ ${esc(t.gossip)}</div>` : ''}` : ''}${t.feedback ? `<div class="fb">${esc(t.feedback)}</div>` : ''}${t.explain ? `<div>${esc(t.explain)}</div>` : ''}${t.question ? `<div class="q">❓ ${esc(t.question)}</div>` : ''}
+    : `<div class="msg ai">${t.score != null ? `<div class="mini-score ${t.score >= PASS ? 'ok' : 'bad'}"><span class="mini-emo ${t.lv ? animOf(t.lv.sound) : ''}">${t.lv ? t.lv.emoji : levelOf(t.score)[2]}</span> ${fmt(t.score)} · ${esc(t.lv ? t.lv.sos : levelOf(t.score)[3])}</div>${t.joke ? `<div class="joke">${esc(t.joke)}</div>` : ''}${t.gossip ? `<div class="gossip">🗣️ ${esc(t.gossip)}</div>` : ''}` : ''}${t.feedback ? `<div class="fb">${esc(t.feedback)}</div>` : ''}${t.explain ? `<div>${esc(t.explain)}</div>` : ''}${t.question ? `<div class="q">❓ ${esc(t.question)}</div>` : ''}
         <button class="plain small say" data-say="${i}">🔊</button></div>`).join('');
   chat.querySelectorAll('[data-say]').forEach((b) => b.onclick = () => speak(turnText(view.turns[+b.dataset.say])));
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
@@ -852,6 +878,10 @@ async function learnTurn(s, st, m, text) {
   }
 }
 
+// Cada personaje se mueve según su sonido: salta, se menea, flota, pisa fuerte o gira.
+const ANIM = { hop: 'bark monkey boing croak chirp squeak quack honk pop cricket', wig: 'buzz scuttle squish meow purr laser robot',
+  flo: 'whale dolphin bubble bloop coo flutter eagle hoot magic choir', stomp: 'roar thud moo neigh heehaw thunder drum horn' };
+const animOf = (snd) => 'a-' + (Object.keys(ANIM).find((k) => ANIM[k].split(' ').includes(snd)) || 'spin');
 // ---------- Galería: todos los personajes, por nivel ----------
 views.characters = () => {
   setHeader('Personajes');
@@ -861,8 +891,9 @@ views.characters = () => {
     <p class="muted small">Hay <b>${all}</b> personajes. Te tocaron <b>${got}</b>. Tocá uno para escuchar su sonido.</p>
     ${LEVELS.map((l, i) => { const next = LEVELS[i + 1];
       return `<h2>${l.min >= 6 ? '🌟' : '🌱'} Nota ${fmt(l.min)}${next ? ' a ' + fmt(Math.round((next.min - 0.1) * 10) / 10) : ' a 10'}</h2>
-      <div class="char-grid">${l.chars.map((c) => `<button class="char-card ${seen.includes(c[0]) ? 'got' : ''}" data-snd="${c[4]}"><span class="char-emoji">${c[2]}</span><span>${esc(c[0])}</span>${seen.includes(c[0]) ? '<span class="char-got">✓</span>' : ''}</button>`).join('')}</div>`; }).join('')}`;
-  app.querySelectorAll('[data-snd]').forEach((el) => el.onclick = () => { audioCtx(); playSfx(el.dataset.snd, true); });
+      <div class="char-grid">${l.chars.map((c) => `<button class="char-card ${seen.includes(c[0]) ? 'got' : ''}" data-snd="${c[4]}"><span class="char-emoji" data-anim="${animOf(c[4])}">${c[2]}</span><span>${esc(c[0])}</span>${seen.includes(c[0]) ? '<span class="char-got">✓</span>' : ''}</button>`).join('')}</div>`; }).join('')}`;
+  app.querySelectorAll('[data-snd]').forEach((el) => el.onclick = () => { audioCtx(); playSfx(el.dataset.snd, true);
+    const e = el.querySelector('.char-emoji'); e.classList.remove(e.dataset.anim); void e.offsetWidth; e.classList.add(e.dataset.anim); });
 };
 
 // ---------- Exámenes ----------
@@ -881,7 +912,7 @@ async function startModuleExam(s, si, mi, btn) {
   btn.disabled = true; btn.textContent = 'Preparando examen…';
   try {
     const j = await askJSON(teacher(), `Tema: ${s.topic}. El alumno acaba de leer este módulo, "${m.title}":\n${m.content}\n` +
-      'Armá 2 preguntas abiertas sobre ESTE contenido, que se respondan en 2 o 3 frases con detalles. ' + Q_HARD + ' ' + Q_RULE + ' Forma: {"questions":["...","..."]}', 600);
+      `Armá 2 preguntas abiertas sobre ESTE contenido, que se respondan en ${diffOf(s).modLen}. ${diffOf(s).q} ` + Q_RULE + ' Forma: {"questions":["...","..."]}', 600);
     go('exam', { sid: s.id, si, mi, type: 'modulo', questions: j.questions.slice(0, 2), answers: [], idx: 0 }, false);
   } catch (e) { btn.disabled = false; btn.textContent = 'Listo, tomame examen →'; alertBox(e.message); }
 }
@@ -908,10 +939,10 @@ async function startExam(s, si, type, btn) {
     ? s.stages.slice(0, Math.max(si, s.current) + 1).map((x) => `${x.title}: ${(x.modules || []).map((m) => m.title).join(', ')}`).join(' | ')
     : `${st.title}: ${(st.modules || []).map((m) => m.title).join(', ')}`;
   const kind = type === 'practico' ? 'situaciones prácticas de la vida real donde haya que aplicar lo aprendido (cada una de 2 o 3 frases, terminando en una pregunta)'
-    : 'preguntas abiertas, difíciles y detalladas que se respondan en 2 a 4 frases';
+    : diffOf(s).kind;
   try {
     const j = await askJSON(teacher(), `Tema: ${s.topic}. Contenido a evaluar: ${scope}.
-Armá ${cfg.n} ${kind}, variadas, de dificultad progresiva (de media a difícil). ${Q_HARD} ${Q_RULE}${type === 'final' ? ' Es el EXAMEN FINAL: repartí las preguntas entre TODAS las etapas, y que al menos una pida relacionar ideas de etapas distintas.' : ''} Forma: {"questions":["...","..."]}`, 1200);
+Armá ${cfg.n} ${kind}, variadas, de dificultad progresiva ${diffOf(s).prog}. ${diffOf(s).q} ${Q_RULE}${type === 'final' ? ' Es el EXAMEN FINAL: repartí las preguntas entre TODAS las etapas, y que al menos una pida relacionar ideas de etapas distintas.' : ''} Forma: {"questions":["...","..."]}`, 1200);
     go('exam', { sid: s.id, si, type, questions: j.questions.slice(0, cfg.n), answers: [], idx: 0 });
   } catch (e) { btn.disabled = false; btn.querySelector('span').textContent = cfg.desc; alertBox(e.message); }
 }
@@ -956,7 +987,7 @@ views.exam = () => {
     try {
       const g = await askJSON(teacher() + ' Corregís exámenes con justicia y de forma alentadora, marcando qué faltó o qué estuvo mal.',
         `Tema: ${s.topic}. Pregunta: ${q}\nRespuesta del alumno: ${answer}\n` +
-        'Corregí con exigencia: una respuesta correcta pero vaga o sin detalles no pasa de 6; 9 o 10 solo si es correcta, completa y con detalles precisos. ' +
+        diffOf(s).grade +
         'Poné dos notas enteras del 1 al 10: "correct" (qué tan correcta y completa es) y "clarity" (qué tan clara, ordenada y precisa es la explicación; si es correcta pero confusa, baja esta nota). ' +
         'Forma: {"correct":0,"clarity":0,"feedback":"2 a 4 frases: qué estuvo bien, qué faltó o estuvo mal, y cómo decirlo más claro","ideal":"una respuesta modelo breve"}', 800, FAST_MODEL);
       view.answers[i] = { answer, correct: clamp(g.correct), clarity: clamp(g.clarity), feedback: g.feedback, ideal: g.ideal };
@@ -1426,7 +1457,7 @@ views.result = () => {
     <div class="result-screen ${ok ? 'pass' : 'fail'}">
       <div class="result-inner">
         <div class="result-topic">${isMod ? esc(m.title) : isFinal ? esc(cfg.name) + ' · ' + esc(s.topic) : esc(cfg.name) + ' · ' + esc(st.title)}</div>
-        <div class="result-emoji">${view.lv.emoji}</div>
+        <div class="result-emoji"><span class="anim-loop ${animOf(view.lv.sound)}">${view.lv.emoji}</span></div>
         <div class="result-label">${settings.name ? esc(settings.name) + ", sacaste" : "Sacaste"}</div>
         <div class="result-num">${fmt(view.score)}</div>
         <div class="result-level">${esc(view.lv.sos)}</div>
