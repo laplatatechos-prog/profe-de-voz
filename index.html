@@ -193,6 +193,23 @@
 .share-row{gap:10px;margin:4px 0 8px}
 .share-cta{background:linear-gradient(90deg,#7bdff2,#b2f7ef);color:#073b4c}
 .rank-cta{background:linear-gradient(90deg,#ffd166,#ff8fab);color:#3a2a00}
+
+.share-sheet{position:fixed;inset:0;background:rgba(30,20,60,.35);display:flex;align-items:flex-end;justify-content:center;z-index:50;animation:fadeUp .25s both}
+.share-box{background:#fff;border-radius:22px 22px 0 0;padding:18px 16px 24px;width:100%;max-width:520px}
+.share-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
+.share-opt{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:28px;text-decoration:none;color:var(--text);background:var(--accent-soft);border:none;border-radius:14px;padding:10px 4px;box-shadow:none;font-family:inherit}
+.share-opt span{font-size:12px;font-weight:700}
+
+.countdown{position:fixed;left:0;right:0;margin:0 auto;top:70px;width:84px;height:84px;z-index:40;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:50%;box-shadow:0 6px 20px rgba(108,92,231,.25);animation:bounceIn .4s both}
+.countdown svg{position:absolute;inset:0;transform:rotate(-90deg)}
+.countdown circle{fill:none;stroke-width:9}
+.countdown .cd-bg{stroke:var(--accent-soft)}
+.countdown .cd-ring{stroke:var(--accent);stroke-linecap:round;transition:stroke-dashoffset 1s linear,stroke .3s}
+.countdown b{position:relative;font-size:34px;font-weight:900;color:var(--accent)}
+.countdown.hurry .cd-ring{stroke:#ff5d73}
+.countdown.hurry b{color:#ff5d73}
+.countdown b.beat{animation:cdBeat .35s}
+@keyframes cdBeat{0%{transform:scale(1.35)}100%{transform:scale(1)}}
 </style>
 </head>
 <body>
