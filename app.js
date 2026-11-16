@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 25;
+const APP_VERSION = 26;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -592,7 +592,7 @@ async function createSubject(topic) {
       stages: j.stages.map((x) => ({ title: x.title, summary: x.summary, done: false, exams: [],
         modules: (x.modules || []).map((m) => ({ title: m.title || m, content: null, seen: false, chat: [] })) })),
     };
-    subjects.unshift(s); save();
+    subjects.unshift(s); save(); shareScore(s);
     go('subject', { sid: s.id });
   } catch (e) { st.innerHTML = `<span class="err">${esc(e.message)}</span>`; btn.disabled = false; }
 }
@@ -662,7 +662,8 @@ Estás enseñando "${s.topic}". Etapa: "${st.title}". Módulo: "${m.title}".
 Enseñás este módulo en ${STEPS} pasos, como una charla. En cada paso explicás UNA sola idea en 1 o 2 frases muy cortas (máximo 30 palabras en total) y enseguida hacés UNA pregunta corta sobre esa idea.
 Siempre respondés SOLO con JSON válido, sin texto extra:
 - Si el mensaje es "EMPEZAR": {"explain":"idea 1","question":"pregunta 1"}
-- Si el alumno responde la pregunta: {"kind":"answer","correct":1-10,"clarity":1-10,"feedback":"una o dos frases cortas, expresivas e irónicas con cariño: si estuvo bien o qué faltó","explain":"siguiente idea (vacío si ya fue el último paso)","question":"siguiente pregunta (vacío si ya fue el último paso)"}
+- Si el alumno responde la pregunta: {"kind":"answer","correct":1-10,"clarity":1-10,"feedback":"una o dos frases cortas, claras y cálidas, SIN chistes ni ironía (la app ya hizo el chiste): si estuvo bien o qué faltó","explain":"siguiente idea (vacío si ya fue el último paso)","question":"siguiente pregunta (vacío si ya fue el último paso)"}
+  Cuando el alumno responde, el feedback, la siguiente idea y la pregunta van SIN chistes, ironías ni bromas: claros y directos.
   "correct" = qué tan correcta es la respuesta. "clarity" = qué tan clara y precisa la explicó.
 - Si el alumno NO responde sino que pregunta algo o pide más detalle: {"kind":"doubt","reply":"respondé su duda, acá sí podés extenderte un poco (máximo 70 palabras)","question":"repetí la pregunta pendiente"}`;
 }
@@ -986,40 +987,53 @@ async function sbRpc(fn, body) {
 const subjAvg = (s) => average(s.stages.map(stageScore).filter((x) => x != null));
 function shareScore(s) {
   const avg = subjAvg(s);
-  if (!settings.share || !settings.name || avg == null || !SB_URL) return;
-  const l = levelOf(avg);
-  sbRpc('submit_score', { p_player: settings.playerId, p_name: settings.name.slice(0, 30), p_topic: s.topic.slice(0, 60), p_avg: Math.round(avg * 10) / 10, p_level: l[1], p_emoji: l[2] }).catch(() => {});
+  if (!settings.share || !SB_URL) return;
+  const l = avg != null ? levelOf(avg) : [0, '', s.emoji || '📘'];
+  // Sube también si recién empezó (sin nota), así los demás ven qué está estudiando.
+  sbRpc('submit_score', { p_player: settings.playerId, p_name: (settings.name || 'Alguien sin nombre').slice(0, 30), p_topic: s.topic.slice(0, 60), p_avg: avg != null ? Math.round(avg * 10) / 10 : null, p_level: l[1], p_emoji: l[2] }).then(() => { rankAt = 0; }).catch(() => {});
 }
 // Al abrir la app, sube los puntajes que ya tenías (por si ya estudiaste antes de que existiera el ranking).
 setTimeout(() => { subjects.forEach(shareScore); rankingRows().catch(() => {}); }, 3000);
-// ---------- Chismes del ranking: el profe cuenta cómo les va a los demás ----------
+// ---------- Lo que el profe te cuenta "por lo bajo" sobre cómo les va a los demás ----------
 let rankCache = null, rankAt = 0;
 async function rankingRows() {
   if (rankCache && Date.now() - rankAt < 5 * 60 * 1000) return rankCache;
-  rankCache = ((await sbRpc('get_ranking', { p_player: settings.playerId })) || []).map((r) => ({ ...r, avg: +r.avg }));
+  rankCache = ((await sbRpc('get_ranking', { p_player: settings.playerId })) || []).map((r) => ({ ...r, avg: r.avg == null ? null : +r.avg }));
   rankAt = Date.now();
   return rankCache;
 }
 const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
-// Usa lo último que se bajó del ranking (y lo actualiza por atrás), así no hay que esperar.
+// Solo cuando hay NOVEDAD de otra persona (tema nuevo, nota nueva o cambio de nivel). Cada novedad se cuenta una vez.
+let seenGossip = store.get('profe-chismes', null);
 function gossip() {
   rankingRows().catch(() => {});
   const rows = rankCache; if (!rows) return '';
   const me = settings.name || 'che';
   const others = rows.filter((r) => !r.me);
-  if (!others.length) return pickOne([
-    `Te cuento un chisme, ${me}: todavía no hay nadie más en el ranking. O sea que sos el primero… y también el último. Compartí la app, así tengo a quién criticar.`,
-    `Chisme del día: ninguno. Nadie más se anotó todavía. Estoy más aburrido que perro en bote. Mandale la app a alguien, dale.`,
+  const sig = (r) => `${r.avg == null ? '-' : r.avg}|${r.level || ''}`;
+  if (!seenGossip) { seenGossip = {}; } // primera vez: todo lo de los demás es novedad
+  const news = others.filter((r) => seenGossip[r.player + '|' + r.topic] !== sig(r));
+  if (!news.length) {
+    if (!others.length && !seenGossip.__solo) { seenGossip.__solo = 1; store.set('profe-chismes', seenGossip); return `Te cuento una cosa, ${me}, pero no se lo digas a nadie… todavía no hay nadie más en el ranking. O sea que sos el primero… y también el último. Compartí la app, así tengo de quién hablar.`; }
+    return '';
+  }
+  const o = pickOne(news), key = o.player + '|' + o.topic, before = seenGossip[key];
+  seenGossip[key] = sig(o); store.set('profe-chismes', seenGossip);
+  const n = o.name, tp = o.topic, L = o.level, a = o.avg != null ? fmt(o.avg) : null;
+  const mine = rows.find((r) => r.me && r.topic === tp && r.avg != null);
+  const prevAvg = before && before.split('|')[0] !== '-' ? +before.split('|')[0] : null;
+  if (a == null) return pickOne([
+    `Te cuento una cosa, pero no te quiero decir nada… ${n} empezó a estudiar ${tp}. Todavía no rindió nada. Se hace el misterioso. Yo no te dije nada, ¿eh?`,
+    `Psst… no sé si debería contarte esto. ${n} arrancó con ${tp}. Viene con todo, o eso dice. Vos hacete el que no sabe.`,
   ]);
-  const o = pickOne(others), mine = rows.find((r) => r.me && r.topic === o.topic);
-  const L = o.level, n = o.name, tp = o.topic, a = fmt(o.avg);
-  const opts = [`Chisme caliente: ${n} anda estudiando ${tp}. Dicen que ya está en el ${L}. Yo no digo nada… solo te aviso.`];
-  if (mine && o.avg > mine.avg) opts.push(`Che, ${me}, ¿sabías que ${n} está en el ${L} en ${tp}? Y vos ahí, en el ${mine.level}… Yo no digo nada, eh. Solo digo.`);
-  if (mine && o.avg < mine.avg) opts.push(`Ojo, que en ${tp} le estás ganando a ${n}, que está apenas en el ${L}. Debe estar llorando en la ducha. No se lo digas.`);
-  if (o.avg >= 8) opts.push(`Me contaron que ${n} sacó ${a} en ${tp} y ahora anda diciendo que es ${L}. Ya se la cree, ¿viste? Hay que bajarle los humos estudiando.`);
-  if (o.avg < 5) opts.push(`No le digas a nadie, pero ${n} está con un ${a} en ${tp}. ${L}. Pobre… pasale un mate y los apuntes.`);
-  if (!mine) opts.push(`¿Sabías que ${n} está en el ${L} en ${tp}? Vos ni lo empezaste. Digo, por si te pica la curiosidad… o el orgullo.`);
-  return pickOne(opts);
+  if (prevAvg != null && o.avg > prevAvg) return `No te quiero decir nada, pero… ${n} subió en ${tp}. Ahora tiene ${a} y está en el ${L}. Se está poniendo las pilas. Yo no te dije nada, ¿eh?`;
+  if (prevAvg != null && o.avg < prevAvg) return `Esto queda entre nosotros… ${n} bajó un poquito en ${tp}. Ahora tiene ${a}, en el ${L}. Pobre, pasale un mate. Pero yo no te conté nada.`;
+  if (mine && o.avg > mine.avg) return `${me}, te cuento una cosa, pero no te quiero decir nada… ${n} ya está en el ${L} en ${tp}, con ${a}. Y vos ahí, en el ${mine.level}… Yo no te dije nada, ¿eh?`;
+  if (mine && o.avg < mine.avg) return `Shh, esto no te lo dije yo… en ${tp} le estás ganando a ${n}, que está en el ${L} con ${a}. Hacete el humilde, ¿eh?`;
+  return pickOne([
+    `Te cuento una cosa, pero no te quiero decir nada… ${n} está estudiando ${tp} y ya sacó ${a}. Está en el ${L}. Yo no te dije nada, ¿eh?`,
+    `Psst… me dijeron por ahí que ${n} anda con ${tp}. Sacó ${a} y quedó en el ${L}. Ya se la cree, ¿viste? Pero no te dije nada.`,
+  ]);
 }
 const medal = (i) => ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
 views.ranking = () => {
@@ -1030,10 +1044,11 @@ views.ranking = () => {
     let list;
     if (view.tab === 'general' || !view.tab) {
       const by = {};
-      rows.forEach((r) => { const k = r.player; (by[k] = by[k] || { name: r.name, me: r.me, xs: [], rs: [] }).xs.push(r.avg); by[k].rs.push(r); });
-      list = Object.values(by).map((p) => { const avg = average(p.xs); const l = p.rs.length === 1 ? [0, p.rs[0].level, p.rs[0].emoji] : levelOf(avg); return { ...p, avg, level: l[1], emoji: l[2], extra: `${p.xs.length} ${p.xs.length === 1 ? 'tema' : 'temas'}` }; });
+      rows.forEach((r) => { const k = r.player; by[k] = by[k] || { name: r.name, me: r.me, xs: [], rs: [] }; if (r.avg != null) by[k].xs.push(r.avg); by[k].rs.push(r); });
+      list = Object.values(by).map((p) => { const avg = average(p.xs); const one = p.rs.filter((x) => x.avg != null); const l = avg == null ? [0, 'Recién empezando', '🐣'] : one.length === 1 ? [0, one[0].level, one[0].emoji] : levelOf(avg); return { ...p, avg, level: l[1], emoji: l[2], extra: `Estudia: ${[...new Set(p.rs.map((x) => x.topic))].join(', ')}` }; });
     } else list = rows.filter((r) => r.topic === view.tab).map((r) => ({ ...r }));
-    list.sort((a, b) => b.avg - a.avg);
+    list.forEach((x) => { if (x.avg == null) { x.level = x.level || 'Recién empezó, todavía sin nota'; x.emoji = x.emoji || '🐣'; } });
+    list.sort((a, b) => (b.avg ?? -1) - (a.avg ?? -1));
     app.innerHTML = `
       <div class="card ask-card"><div class="ask-q">🏆 ¿Quién sabe más?</div>
         <div class="muted small">Acá ves el nivel y el personaje de todas las personas que usan la app.</div></div>
@@ -1047,7 +1062,7 @@ views.ranking = () => {
             <div class="rank-pos">${medal(i)}</div>
             <div class="rank-emoji">${p.emoji}</div>
             <div class="grow"><b>${esc(p.name)}${p.me ? ' (vos)' : ''}</b><div class="small">${esc(p.level)}</div><div class="muted small">${esc(p.extra || '')}</div></div>
-            <div class="pill ${p.avg >= PASS ? 'ok' : 'bad'}">${fmt(p.avg)}</div></div>`).join('')}
+            ${p.avg != null ? `<div class="pill ${p.avg >= PASS ? 'ok' : 'bad'}">${fmt(p.avg)}</div>` : ''}</div>`).join('')}
       ${!settings.share ? '<p class="muted small">Vos no aparecés porque desactivaste "Aparecer en el ranking" en Configuración.</p>' : !settings.name ? '<p class="muted small">Para aparecer, poné tu nombre en Configuración.</p>' : ''}`;
     app.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { view.tab = b.dataset.tab; draw(); });
   };
@@ -1055,7 +1070,7 @@ views.ranking = () => {
   if (!view.rows && !view.loading) {
     view.loading = true;
     sbRpc('get_ranking', { p_player: settings.playerId })
-      .then((rows) => { view.rows = (rows || []).map((r) => ({ ...r, avg: +r.avg })); })
+      .then((rows) => { view.rows = (rows || []).map((r) => ({ ...r, avg: r.avg == null ? null : +r.avg })); })
       .catch((e) => { view.err = e.message; })
       .finally(() => { view.loading = false; if (view.name === 'ranking') draw(); });
   }
