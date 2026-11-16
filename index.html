@@ -6,25 +6,31 @@
 <title>Profe de Voz</title>
 <meta name="theme-color" content="#f7f6f3">
 <link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script type="importmap">{ "imports": { "onnxruntime-web/wasm": "./vendor/ort/ort.wasm.min.js" } }</script>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
   :root {
-    --bg: #f7f6f3; --card: #ffffff; --line: #e8e6e1; --text: #2b2b2b; --muted: #8a8780;
-    --accent: #4f7cac; --accent-soft: #e8eff6; --ok: #5a9e7c; --ok-soft: #e7f3ec;
+    --bg: #fbf8f4; --card: #ffffff; --line: #ece7e0; --text: #2b2b2b; --muted: #7d7a74;
+    --accent: #6c5ce7; --accent-soft: #eeebff; --ok: #2fb380; --ok-soft: #e2f6ee;
+    --pink: #ff7aa2; --pink-soft: #ffeef3; --mint: #2fb380; --mint-soft: #e2f6ee; --sky: #3a9bff; --sky-soft: #e6f2ff;
+    --lemon: #f2b705; --lemon-soft: #fff7d9; --lavender: #8e6cf0; --lavender-soft: #f1ecff; --peach: #ff8a4c; --peach-soft: #fff0e6;
     --warn: #c99a3b; --bad: #c0605a; --bad-soft: #f7e9e8;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 17px; line-height: 1.5; }
+    font-family: "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 17px; line-height: 1.5; }
   body { min-height: 100vh; padding-bottom: env(safe-area-inset-bottom); }
   header { display: flex; align-items: center; gap: 4px; padding: 10px 8px; position: sticky; top: 0;
     background: var(--bg); z-index: 5; padding-top: calc(10px + env(safe-area-inset-top)); }
   header h1 { font-size: 18px; font-weight: 600; margin: 0 8px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   main { max-width: 640px; margin: 0 auto; padding: 4px 16px 40px; }
-  h2 { font-size: 15px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 28px 0 10px; }
+  h2 { font-size: 15px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; margin: 28px 0 10px; }
   button { font: inherit; border: 0; border-radius: 12px; padding: 12px 18px; cursor: pointer;
-    background: var(--accent); color: #fff; font-weight: 500; }
+    background: linear-gradient(135deg, #7b6cff, #4f9dff); color: #fff; font-weight: 600; }
   button.soft { background: var(--accent-soft); color: var(--accent); }
   button.plain { background: transparent; color: var(--muted); padding: 10px 12px; }
   button.icon { background: transparent; color: var(--text); padding: 8px 12px; font-size: 20px; }
@@ -128,7 +134,29 @@
   .voice-ico { font-size: 28px; }
   .voice-txt { flex: 1; display: flex; flex-direction: column; }
   .voice-txt span { font-size: 14px; color: var(--muted); font-weight: 400; }
+  .voice-btn { position: relative; overflow: hidden; }
+  .dl-bar { position: absolute; left: 0; bottom: 0; height: 4px; background: linear-gradient(90deg, #2fb380, #3a9bff); transition: width .3s; }
   .voice-check { color: var(--accent); font-weight: 700; font-size: 20px; animation: pop .3s; }
+  /* ---- Colores ---- */
+  header h1 { background: linear-gradient(90deg, #6c5ce7, #ff7aa2, #ff8a4c); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 800; }
+  .bar > div { background: linear-gradient(90deg, #2fb380, #3a9bff); }
+  .tint-pink { background: var(--pink-soft); border-color: transparent; border-left: 6px solid var(--pink); }
+  .tint-mint { background: var(--mint-soft); border-color: transparent; border-left: 6px solid var(--mint); }
+  .tint-sky { background: var(--sky-soft); border-color: transparent; border-left: 6px solid var(--sky); }
+  .tint-lemon { background: var(--lemon-soft); border-color: transparent; border-left: 6px solid var(--lemon); }
+  .tint-lavender { background: var(--lavender-soft); border-color: transparent; border-left: 6px solid var(--lavender); }
+  .tint-peach { background: var(--peach-soft); border-color: transparent; border-left: 6px solid var(--peach); }
+  .stage-pink .num { background: var(--pink-soft); color: var(--pink); } .stage-mint .num { background: var(--mint-soft); color: var(--mint); }
+  .stage-sky .num { background: var(--sky-soft); color: var(--sky); } .stage-lemon .num { background: var(--lemon-soft); color: #b58700; }
+  .stage-lavender .num { background: var(--lavender-soft); color: var(--lavender); } .stage-peach .num { background: var(--peach-soft); color: var(--peach); }
+  .current.stage-pink .num { background: var(--pink); color: #fff; } .current.stage-mint .num { background: var(--mint); color: #fff; }
+  .current.stage-sky .num { background: var(--sky); color: #fff; } .current.stage-lemon .num { background: var(--lemon); color: #fff; }
+  .current.stage-lavender .num { background: var(--lavender); color: #fff; } .current.stage-peach .num { background: var(--peach); color: #fff; }
+  .card.done .num { background: var(--ok) !important; color: #fff !important; }
+  .result-screen.pass { background: linear-gradient(160deg, #2fb380, #1f9e8f); }
+  .result-screen.fail { background: linear-gradient(160deg, #ff8a4c, #ff6b6b); }
+  .lesson-title { color: var(--accent); }
+  .msg.me { background: linear-gradient(135deg, #eeebff, #e6f2ff); }
   .speak-btn { display: inline-flex; gap: 6px; align-items: center; }
 </style>
 </head>

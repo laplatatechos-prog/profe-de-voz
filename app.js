@@ -3,7 +3,9 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 8;
+const APP_VERSION = 10;
+const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
+const tint = (i) => PALETTE[i % PALETTE.length];
 const PASS = 6; // nota mínima para aprobar el examen de etapa
 
 const app = document.getElementById('app');
@@ -86,7 +88,7 @@ function currentVoice() {
   return voices.find((v) => v.voiceURI === settings.voiceURI) || spanishVoices()[0] || null;
 }
 
-let speakingBtn = null, speakToken = 0;
+let speakingBtn = null, speakToken = 0, audio = null;
 function speak(text, btn) {
   const wasThis = speakingBtn && speakingBtn === btn;
   stopSpeaking();
@@ -94,7 +96,8 @@ function speak(text, btn) {
   const clean = String(text).replace(/[*#_`]/g, '');
   speakingBtn = btn || null;
   if (btn) btn.textContent = '■ Parar';
-  speakBrowser(clean);
+  if (settings.engine === 'piper' && settings.piperVoice) speakPiper(clean, speakToken);
+  else speakBrowser(clean);
 }
 function speakBrowser(clean) {
   if (!('speechSynthesis' in window)) return stopSpeaking();
@@ -113,8 +116,76 @@ function speakBrowser(clean) {
   };
   next();
 }
+// ---- Voces naturales Piper: se descargan una vez y funcionan dentro del navegador, gratis ----
+const PIPER_VOICES = [
+  { id: 'es_MX-ald-medium', name: 'Alejandro', gender: 'hombre', country: 'México', mb: 63 },
+  { id: 'es_ES-davefx-medium', name: 'David', gender: 'hombre', country: 'España', mb: 63 },
+  { id: 'es_ES-sharvard-medium', name: 'Sergio', gender: 'hombre', country: 'España', mb: 77 },
+  { id: 'es_MX-claude-high', name: 'Claude', gender: '', country: 'México · alta calidad', mb: 63 },
+];
+let piperMod = null, piperSession = null, piperSessionVoice = null, piperStored = null;
+const abs = (p) => new URL(p, location.href).href;
+async function getPiper() {
+  if (!piperMod) piperMod = await import('./vendor/piper/piper-tts-web.js');
+  return piperMod;
+}
+async function piperSessionFor(voiceId, progress) {
+  const m = await getPiper();
+  if (piperSession && piperSessionVoice === voiceId) return piperSession;
+  m.TtsSession._instance = null; // la librería reutiliza la sesión; forzamos una nueva al cambiar de voz
+  piperSession = await m.TtsSession.create({
+    voiceId, progress,
+    wasmPaths: { onnxWasm: abs('vendor/ort/'), piperData: abs('vendor/piper/piper_phonemize.data'), piperWasm: abs('vendor/piper/piper_phonemize.wasm') },
+  });
+  piperSessionVoice = voiceId;
+  return piperSession;
+}
+async function piperDownloaded() {
+  if (piperStored) return piperStored;
+  try { piperStored = await (await getPiper()).stored(); } catch { piperStored = []; }
+  return piperStored;
+}
+function chunks(clean) {
+  const sentences = clean.replace(/\n+/g, ' ').match(/[^.!?]+[.!?]*\s*/g) || [clean];
+  const out = [];
+  for (const x of sentences) { if (out.length && (out[out.length - 1] + x).length < 180) out[out.length - 1] += x; else out.push(x); }
+  return out.map((x) => x.trim()).filter(Boolean);
+}
+function playBlob(blob) {
+  return new Promise((res) => {
+    const url = URL.createObjectURL(blob);
+    audio = new Audio(url);
+    audio.playbackRate = settings.rate || 1;
+    audio.onended = () => { URL.revokeObjectURL(url); res(); };
+    audio.onerror = () => res();
+    audio.play().catch(() => res());
+  });
+}
+async function speakPiper(clean, token) {
+  const parts = chunks(clean);
+  try {
+    if (speakingBtn) speakingBtn.textContent = '… Preparando voz';
+    const sess = await piperSessionFor(settings.piperVoice);
+    let next = sess.predict(parts[0]);
+    for (let i = 0; i < parts.length; i++) {
+      const blob = await next;
+      if (token !== speakToken) return;
+      if (speakingBtn) speakingBtn.textContent = '■ Parar';
+      if (i + 1 < parts.length) next = sess.predict(parts[i + 1]); // prepara la próxima frase mientras suena esta
+      await playBlob(blob);
+      if (token !== speakToken) return;
+    }
+    stopSpeaking();
+  } catch (e) {
+    console.error(e);
+    if (token !== speakToken) return;
+    toast('No pude usar la voz natural, uso la del teléfono.');
+    speakBrowser(clean);
+  }
+}
 function stopSpeaking() {
   speakToken++;
+  if (audio) { audio.pause(); audio = null; }
   if ('speechSynthesis' in window) speechSynthesis.cancel();
   if (speakingBtn) speakingBtn.textContent = '▶ Escuchar';
   speakingBtn = null;
@@ -132,6 +203,7 @@ let view = { name: 'home' };
 const stack = [];
 function go(name, params = {}, push = true) {
   stopSpeaking();
+  document.querySelectorAll('.confetti').forEach((c) => c.remove());
   if (push) stack.push(view);
   view = { name, ...params };
   render(); window.scrollTo(0, 0);
@@ -179,14 +251,25 @@ views.settings = () => {
   app.innerHTML = `
     <h2>Voz</h2>
     <div class="card">
-      <label style="margin-top:0">Voz del profe</label>
+      <label style="margin-top:0">Voces naturales <span class="pill ok">gratis</span></label>
+      <div class="voices">${PIPER_VOICES.map((p) => {
+        const on = settings.engine === 'piper' && settings.piperVoice === p.id;
+        const have = (piperStored || []).includes(p.id);
+        const prog = view.dl && view.dl.id === p.id ? view.dl.pct : null;
+        return `<button class="voice-btn ${on ? 'on' : ''}" data-piper="${p.id}">
+          <span class="voice-ico">${p.gender === 'hombre' ? '👨' : '🎙️'}</span>
+          <span class="voice-txt"><b>${p.name}${p.gender ? ' · Hombre' : ''}</b><span>${p.country} · ${prog != null ? `descargando ${prog}%` : have ? 'lista ✓' : `se descarga una vez (${p.mb} MB)`}</span></span>
+          ${on ? '<span class="voice-check">✓</span>' : ''}
+          ${prog != null ? `<span class="dl-bar" style="width:${prog}%"></span>` : ''}
+        </button>`; }).join('')}</div>
+      <label>Voces del teléfono</label>
       ${list.length ? `<div class="voices">${list.map((x, i) => `
-        <button class="voice-btn ${v && v.voiceURI === x.voiceURI ? 'on' : ''}" data-voice="${esc(x.voiceURI)}">
+        <button class="voice-btn ${settings.engine !== 'piper' && v && v.voiceURI === x.voiceURI ? 'on' : ''}" data-voice="${esc(x.voiceURI)}">
           <span class="voice-ico">${genderOf(x) === 'hombre' ? '👨' : genderOf(x) === 'mujer' ? '👩' : '🗣️'}</span>
           <span class="voice-txt"><b>Voz ${i + 1}${genderOf(x) ? ' · ' + (genderOf(x) === 'hombre' ? 'Hombre' : 'Mujer') : ''}</b><span>${country(x)}${QUALITY.test(x.name) ? ' · ★ natural' : ''}</span></span>
-          ${v && v.voiceURI === x.voiceURI ? '<span class="voice-check">✓</span>' : ''}
+          ${settings.engine !== 'piper' && v && v.voiceURI === x.voiceURI ? '<span class="voice-check">✓</span>' : ''}
         </button>`).join('')}</div>`
-        : '<p class="muted">Todavía no cargaron las voces de este teléfono. Esperá unos segundos o cerrá y abrí la app.</p>'}
+        : `<div class="voices"><button class="voice-btn ${settings.engine !== 'piper' ? 'on' : ''}" data-voice=""><span class="voice-ico">🗣️</span><span class="voice-txt"><b>Voz del teléfono</b><span>Español</span></span>${settings.engine !== 'piper' ? '<span class="voice-check">✓</span>' : ''}</button></div>`}
       <label>Largo de las explicaciones</label>
       <div class="seg">${[['corto', 'Muy cortas'], ['normal', 'Normales']].map(([k, n]) => `<button data-len="${k}" class="${settings.length === k ? 'on' : ''}">${n}</button>`).join('')}</div>
       <label>Velocidad: <b id="rateVal">${settings.rate.toFixed(2)}x</b></label>
@@ -206,9 +289,31 @@ views.settings = () => {
 `;
   const $ = (id) => document.getElementById(id);
   app.querySelectorAll('[data-voice]').forEach((b) => b.onclick = () => {
-    settings.voiceURI = b.dataset.voice; save();
-    app.querySelectorAll('[data-voice]').forEach((x) => { x.classList.toggle('on', x === b); const c = x.querySelector('.voice-check'); if (c) c.remove(); });
-    b.insertAdjacentHTML('beforeend', '<span class="voice-check">✓</span>');
+    settings.voiceURI = b.dataset.voice; settings.engine = 'browser'; save(); render();
+    speak('Hola, soy tu profe. Así suena mi voz.');
+  });
+  if (!piperStored) piperDownloaded().then(() => { if (view.name === 'settings' && !view.dl) render(); });
+  app.querySelectorAll('[data-piper]').forEach((b) => b.onclick = async () => {
+    if (view.dl) return;
+    const id = b.dataset.piper;
+    const have = (piperStored || []).includes(id);
+    if (!have) {
+      try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
+      view.dl = { id, pct: 0 }; render();
+      try {
+        await piperSessionFor(id, (p) => {
+          if (!p || !p.total || String(p.url).startsWith('tts://')) return;
+          const pct = Math.min(99, Math.round((100 * p.loaded) / p.total));
+          if (view.dl && pct !== view.dl.pct) { view.dl.pct = pct; const el = app.querySelector(`[data-piper="${id}"]`); if (el) { el.querySelector('.voice-txt span').textContent = `descargando ${pct}%`; const bar = el.querySelector('.dl-bar'); if (bar) bar.style.width = pct + '%'; } }
+        });
+        piperStored = null; await piperDownloaded();
+        if (!piperStored.includes(id)) piperStored.push(id);
+      } catch (e) {
+        console.error(e); view.dl = null; render(); toast('No se pudo descargar la voz. Probá con WiFi.'); return;
+      }
+      view.dl = null;
+    }
+    settings.engine = 'piper'; settings.piperVoice = id; save(); render();
     speak('Hola, soy tu profe. Así suena mi voz.');
   });
   app.querySelectorAll('[data-len]').forEach((b) => b.onclick = () => { settings.length = b.dataset.len; save(); render(); });
@@ -233,7 +338,7 @@ views.home = () => {
     const scored = s.stages.filter((x) => stageScore(x) != null);
     const rows = scored.map((x) => { const best = stageScore(x);
       return `<div class="between score-row"><span>${esc(x.title)}</span><span class="pill ${best >= PASS ? 'ok' : 'bad'}">${fmt(best)}</span></div>`; }).join('');
-    return `<div class="card tap" data-sid="${s.id}">
+    return `<div class="card tap tint-${tint(subjects.indexOf(s))}" data-sid="${s.id}">
       <div class="between"><b><span class="emoji">${s.emoji || '📘'}</span> ${esc(s.topic)}</b>${avg != null ? `<span class="pill ${avg >= PASS ? 'ok' : 'bad'}">${levelOf(avg)[2]} ${fmt(avg)}</span>` : ''}</div>
       <div class="bar"><div style="width:${(100 * done) / s.stages.length}%"></div></div>
       ${avg != null ? `<div class="small" style="margin-top:8px;font-weight:600">${levelOf(avg)[2]} ${levelOf(avg)[1]}</div>` : ''}
@@ -287,7 +392,7 @@ views.subject = () => {
       const state = st.done ? 'done' : i === s.current ? 'current' : i > s.current ? 'locked' : '';
       const best = stageScore(st);
       const open = view.open === undefined ? state === 'current' : view.open === i;
-      return `<div class="card ${state}">
+      return `<div class="card ${state} stage-${tint(i)}">
         <div class="stage-head tap" data-toggle="${i}"><div class="num">${st.done ? '✓' : i + 1}</div>
           <div class="grow" style="flex:1"><b>${esc(st.title)}</b><div class="muted small">${esc(st.summary)}${state === 'locked' ? ' · 🔒 Se habilita al aprobar la anterior' : ''}</div></div>
           ${best != null ? `<span class="pill ${best >= PASS ? 'ok' : 'bad'}">${fmt(best)}</span>` : ''}</div>
