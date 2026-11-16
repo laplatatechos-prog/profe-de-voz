@@ -58,24 +58,38 @@ const TEACHER = 'Sos un profesor claro y paciente que enseña a un adulto de Arg
   'Tus textos también se leen en voz alta: no uses markdown, asteriscos, numerales, viñetas, tablas ni emojis.';
 
 // ---------- Voz ----------
+// Usa las voces gratis del navegador/teléfono, priorizando las más naturales.
+const MALE = /\b(male|hombre|masculin|jorge|diego|pablo|alvaro|álvaro|raul|raúl|carlos|juan|enrique|alonso|tom[aá]s|gonzalo|andr[eé]s|jaime|jorge|miguel|antonio|federico|mateo|lucas|dario|darío|alejandro|gerardo|liam|arnau|teo|elias|elías|emilio|jos[eé]|manuel|nicol[aá]s|santiago)\b/i;
+const FEMALE = /\b(female|mujer|femenin|helena|laura|sabina|paulina|m[oó]nica|elena|dalia|elvira|paloma|luc[ií]a|camila|valentina|marisol|paola|salome|salomé|ximena|abril|ana|carla|catalina|isabel|mar[ií]a|sof[ií]a|elsa|irene|lola|esperanza|monserrat)\b/i;
+const QUALITY = /(natural|neural|online|google|premium|enhanced|mejorad)/i;
+const genderOf = (v) => (MALE.test(v.name) ? 'hombre' : FEMALE.test(v.name) ? 'mujer' : '');
+const qualityOf = (v) => (QUALITY.test(v.name) ? 2 : 0) + (v.localService ? 0 : 1);
+
 let voices = [];
 function loadVoices() { voices = 'speechSynthesis' in window ? speechSynthesis.getVoices() : []; }
 if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = () => { loadVoices(); if (view.name === 'settings') render(); }; }
-function currentVoice() {
-  return voices.find((v) => v.voiceURI === settings.voiceURI)
-    || voices.find((v) => /^es[-_](AR|419|US|MX)/i.test(v.lang)) || voices.find((v) => /^es/i.test(v.lang)) || null;
+function spanishVoices() {
+  return voices.filter((v) => /^es/i.test(v.lang)).sort((a, b) => qualityOf(b) - qualityOf(a) || /AR|419/i.test(b.lang) - /AR|419/i.test(a.lang) || a.name.localeCompare(b.name));
 }
-let speakingBtn = null;
+function currentVoice() {
+  return voices.find((v) => v.voiceURI === settings.voiceURI) || spanishVoices()[0] || null;
+}
+
+let speakingBtn = null, speakToken = 0;
 function speak(text, btn) {
-  if (!('speechSynthesis' in window)) return;
   const wasThis = speakingBtn && speakingBtn === btn;
   stopSpeaking();
   if (wasThis) return; // segundo toque = parar
-  const parts = String(text).replace(/[*#_`]/g, '').match(/[^.!?\n]+[.!?]*\s*/g) || [text];
-  const v = currentVoice();
-  let i = 0;
+  const clean = String(text).replace(/[*#_`]/g, '');
   speakingBtn = btn || null;
   if (btn) btn.textContent = '■ Parar';
+  speakBrowser(clean);
+}
+function speakBrowser(clean) {
+  if (!('speechSynthesis' in window)) return stopSpeaking();
+  const parts = clean.match(/[^.!?\n]+[.!?]*\s*/g) || [clean];
+  const v = currentVoice();
+  let i = 0;
   const next = () => {
     if (i >= parts.length) { stopSpeaking(); return; }
     const u = new SpeechSynthesisUtterance(parts[i++].trim());
@@ -87,9 +101,16 @@ function speak(text, btn) {
   next();
 }
 function stopSpeaking() {
+  speakToken++;
   if ('speechSynthesis' in window) speechSynthesis.cancel();
   if (speakingBtn) speakingBtn.textContent = '▶ Escuchar';
   speakingBtn = null;
+}
+function toast(msg) {
+  const d = document.createElement('div');
+  d.textContent = msg;
+  d.style.cssText = 'position:fixed;left:16px;right:16px;bottom:20px;background:#2b2b2b;color:#fff;padding:12px 16px;border-radius:12px;z-index:50;font-size:15px;text-align:center';
+  document.body.appendChild(d); setTimeout(() => d.remove(), 4500);
 }
 const listenBtn = (id) => `<button class="soft speak-btn" data-speak="${id}">▶ Escuchar</button>`;
 
@@ -119,21 +140,36 @@ const getSubj = () => subjects.find((s) => s.id === view.sid);
 views.settings = () => {
   setHeader('Configuración');
   const v = currentVoice();
-  const sorted = [...voices].sort((a, b) => (/^es/i.test(b.lang) - /^es/i.test(a.lang)) || a.name.localeCompare(b.name));
-  const showAll = view.allVoices;
-  const list = showAll ? sorted : sorted.filter((x) => /^es/i.test(x.lang));
+  const list = view.allVoices ? [...voices].sort((a, b) => a.lang.localeCompare(b.lang)) : spanishVoices();
+  const label = (x) => `${x.name.replace(/^(Microsoft|Google)\s+/, '').replace(/\s*-\s*Spanish.*$/i, '')} · ${x.lang}${genderOf(x) ? ' · ' + genderOf(x) : ''}${QUALITY.test(x.name) ? ' ★' : ''}`;
+  const hasMale = list.some((x) => genderOf(x) === 'hombre');
   app.innerHTML = `
     <h2>Voz</h2>
     <div class="card">
-      <label>Voz del profe</label>
-      ${list.length ? `<select id="voiceSel">${list.map((x) => `<option value="${esc(x.voiceURI)}" ${v && v.voiceURI === x.voiceURI ? 'selected' : ''}>${esc(x.name)} (${esc(x.lang)})</option>`).join('')}</select>`
-        : '<p class="muted">Este navegador no tiene voces en español instaladas.</p>'}
-      <button class="plain small" id="allVoices">${showAll ? 'Mostrar solo voces en español' : 'Mostrar todas las voces'}</button>
+      <label style="margin-top:0">Voz del profe</label>
+      ${list.length ? `<select id="voiceSel">${list.map((x) => `<option value="${esc(x.voiceURI)}" ${v && v.voiceURI === x.voiceURI ? 'selected' : ''}>${esc(label(x))}</option>`).join('')}</select>`
+        : '<p class="muted">No encontré voces en español en este navegador.</p>'}
+      <p class="muted small">★ = voz de mejor calidad. ${hasMale ? '' : 'Este navegador no trae voces de hombre en español. '}Más abajo te explico cómo sumar voces de hombre gratis.</p>
+      <button class="plain small" id="allVoices" style="padding-left:0">${view.allVoices ? 'Mostrar solo voces en español' : 'Mostrar todas las voces'}</button>
       <label>Velocidad: <b id="rateVal">${settings.rate.toFixed(2)}x</b></label>
       <div class="row"><span class="muted small">Lenta</span><input class="grow" id="rate" type="range" min="0.6" max="1.8" step="0.05" value="${settings.rate}"><span class="muted small">Rápida</span></div>
       <label class="row" style="gap:10px;color:var(--text)"><input type="checkbox" id="autoRead" style="width:auto" ${settings.autoRead ? 'checked' : ''}> Leer en voz alta los módulos automáticamente</label>
       <div style="margin-top:14px"><button class="soft" id="testVoice">▶ Probar voz</button></div>
     </div>
+
+    <h2>¿Querés una voz de hombre o más natural en el celular?</h2>
+    <div class="card small" style="font-size:15px">
+      <p style="margin-top:0">En Android, Chrome usa la voz que tenga configurada el teléfono. Se cambia gratis así:</p>
+      <ol style="padding-left:20px;margin:0">
+        <li>Abrí <b>Ajustes</b> del teléfono y buscá <b>"Texto a voz"</b> (en Samsung: Administración general → Idioma → Texto a voz).</li>
+        <li>En <b>Motor preferido</b> elegí <b>Servicios de Google</b> (es el más natural).</li>
+        <li>Tocá el engranaje ⚙ al lado → <b>Instalar datos de voz</b> → <b>Español</b> (Estados Unidos o España).</li>
+        <li>Elegí una de las voces de hombre (probalas con el botón ▶) y descargala.</li>
+        <li>Cerrá esta app y abrila de nuevo.</li>
+      </ol>
+      <p class="muted" style="margin-bottom:0">En la compu, abrí la app en Microsoft Edge: trae voces muy naturales de hombre, como "Tomás" de Argentina.</p>
+    </div>
+
     <h2>Clave de Claude</h2>
     <div class="card">
       <p class="muted" style="margin-top:0">Se guarda solo en este equipo.</p>
@@ -141,20 +177,18 @@ views.settings = () => {
       <div class="row" style="margin-top:10px"><button id="saveKey">Guardar</button><span id="keyMsg" class="muted"></span></div>
       <p class="muted small">Para sacarla: platform.claude.com → Claves (API Keys) → Crear clave. Empieza con sk-ant-.</p>
     </div>`;
-  const sel = document.getElementById('voiceSel');
-  if (sel) sel.onchange = () => { settings.voiceURI = sel.value; save(); speak('Hola, esta es mi voz.'); };
-  document.getElementById('allVoices').onclick = () => { view.allVoices = !showAll; render(); };
-  document.getElementById('rate').oninput = (e) => { settings.rate = +e.target.value; document.getElementById('rateVal').textContent = settings.rate.toFixed(2) + 'x'; save(); };
-  document.getElementById('rate').onchange = () => speak('Así suena esta velocidad.');
-  document.getElementById('autoRead').onchange = (e) => { settings.autoRead = e.target.checked; save(); };
-  const tb = document.getElementById('testVoice');
-  tb.onclick = () => { speak('Hola, soy tu profe. Vamos a aprender juntos, de a poco.', tb); };
-  document.getElementById('saveKey').onclick = async () => {
-    settings.key = document.getElementById('keyInput').value.trim(); save();
-    const msg = document.getElementById('keyMsg');
-    msg.textContent = 'Probando…';
-    try { await askClaude('Respondé solo "ok".', [{ role: 'user', content: 'hola' }], 10); msg.textContent = '✓ Funciona'; setTimeout(back, 700); }
-    catch (e) { msg.innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  const $ = (id) => document.getElementById(id);
+  if ($('voiceSel')) $('voiceSel').onchange = () => { settings.voiceURI = $('voiceSel').value; save(); speak('Hola, esta es mi voz.'); };
+  if ($('allVoices')) $('allVoices').onclick = () => { view.allVoices = !view.allVoices; render(); };
+  $('rate').oninput = (e) => { settings.rate = +e.target.value; $('rateVal').textContent = settings.rate.toFixed(2) + 'x'; save(); };
+  $('rate').onchange = () => speak('Así suena esta velocidad.');
+  $('autoRead').onchange = (e) => { settings.autoRead = e.target.checked; save(); };
+  $('testVoice').onclick = () => speak('Hola, soy tu profe. Vamos a aprender juntos, de a poco.', $('testVoice'));
+  $('saveKey').onclick = async () => {
+    settings.key = $('keyInput').value.trim(); save();
+    $('keyMsg').textContent = 'Probando…';
+    try { await askClaude('Respondé solo "ok".', [{ role: 'user', content: 'hola' }], 10); $('keyMsg').textContent = '✓ Funciona'; setTimeout(back, 700); }
+    catch (e) { $('keyMsg').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
   };
 };
 
