@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 const PASS = 6; // nota mínima para aprobar el examen de etapa
 
 const app = document.getElementById('app');
@@ -15,7 +15,9 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 let subjects = store.get('subjects', []);
-let settings = Object.assign({ key: '', rate: 1, voiceURI: '', autoRead: false, pitch: 1 }, store.get('settings', {}));
+let settings = Object.assign({ key: '', rate: 1, voiceURI: '', autoRead: false, length: 'corto' }, store.get('settings', {}));
+settings.pitch = 1; // el tono grave sonaba mal: siempre tono natural
+if (!settings.length) settings.length = 'corto';
 const save = () => { store.set('subjects', subjects); store.set('settings', settings); };
 
 // Adaptar áreas creadas con la versión anterior (etapas sin módulos).
@@ -55,6 +57,9 @@ async function askJSON(system, user, maxTokens = 2000) {
   const b = Math.max(raw.lastIndexOf('}'), raw.lastIndexOf(']'));
   return JSON.parse(raw.slice(a, b + 1));
 }
+const lengthRule = (short = settings.length === 'corto') => short
+  ? 'Muy breve y directo: entre 35 y 60 palabras, frases cortas y simples, la idea principal y un ejemplo de una línea. Nada de relleno.'
+  : 'Entre 90 y 150 palabras, en 2 o 3 párrafos cortos, con un ejemplo concreto de la vida real.';
 const TEACHER = 'Sos un profesor claro y paciente que enseña a un adulto de Argentina. Hablale de vos, en español rioplatense. ' +
   'Tus textos también se leen en voz alta: no uses markdown, asteriscos, numerales, viñetas, tablas ni emojis.';
 
@@ -93,7 +98,9 @@ function speak(text, btn) {
 }
 function speakBrowser(clean) {
   if (!('speechSynthesis' in window)) return stopSpeaking();
-  const parts = clean.match(/[^.!?\n]+[.!?]*\s*/g) || [clean];
+  const sentences = clean.replace(/\n+/g, ' ').match(/[^.!?]+[.!?]*\s*/g) || [clean];
+  const parts = [];
+  for (const x of sentences) { if (parts.length && (parts[parts.length - 1] + x).length < 220) parts[parts.length - 1] += x; else parts.push(x); }
   const v = currentVoice();
   let i = 0;
   const next = () => {
@@ -101,7 +108,6 @@ function speakBrowser(clean) {
     const u = new SpeechSynthesisUtterance(parts[i++].trim());
     if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'es-AR';
     u.rate = settings.rate || 1;
-    u.pitch = settings.pitch || 1;
     u.onend = next; u.onerror = next;
     speechSynthesis.speak(u);
   };
@@ -153,17 +159,14 @@ views.settings = () => {
   app.innerHTML = `
     <h2>Voz</h2>
     <div class="card">
-      <label style="margin-top:0">Tipo de voz</label>
-      <div class="seg">${[['Grave (hombre)', 0.6], ['Normal', 1], ['Aguda', 1.35]].map(([n, p]) => `<button data-pitch="${p}" class="${Math.abs((settings.pitch || 1) - p) < 0.01 ? 'on' : ''}">${n}</button>`).join('')}</div>
-      <label>Tono: <b id="pitchVal">${(settings.pitch || 1).toFixed(2)}</b></label>
-      <div class="row"><span class="muted small">Grave</span><input class="grow" id="pitch" type="range" min="0.3" max="1.6" step="0.05" value="${settings.pitch || 1}"><span class="muted small">Aguda</span></div>
-      <p class="muted small">"Grave" hace que cualquier voz suene más gruesa, parecida a una voz de hombre. Funciona en cualquier teléfono.</p>
-      <label>Voz del profe</label>
+      <label style="margin-top:0">Voz del profe</label>
       ${list.length ? `<select id="voiceSel">${list.map((x) => `<option value="${esc(x.voiceURI)}" ${v && v.voiceURI === x.voiceURI ? 'selected' : ''}>${esc(label(x))}</option>`).join('')}</select>`
         : '<p class="muted">Todavía no cargaron las voces de este teléfono. Esperá unos segundos o cerrá y abrí la app.</p>'}
       ${list.length === 1 ? '<p class="muted small">Tu teléfono le da a Chrome una sola voz en español. Para tener más voces, seguí los pasos de más abajo.</p>' : ''}
       <p class="muted small">★ = voz de mejor calidad. ${hasMale ? '' : 'Este navegador no trae voces de hombre en español. '}Más abajo te explico cómo sumar voces de hombre gratis.</p>
       <button class="plain small" id="allVoices" style="padding-left:0">${view.allVoices ? 'Mostrar solo voces en español' : 'Mostrar todas las voces'}</button>
+      <label>Largo de las explicaciones</label>
+      <div class="seg">${[['corto', 'Muy cortas'], ['normal', 'Normales']].map(([k, n]) => `<button data-len="${k}" class="${settings.length === k ? 'on' : ''}">${n}</button>`).join('')}</div>
       <label>Velocidad: <b id="rateVal">${settings.rate.toFixed(2)}x</b></label>
       <div class="row"><span class="muted small">Lenta</span><input class="grow" id="rate" type="range" min="0.6" max="1.8" step="0.05" value="${settings.rate}"><span class="muted small">Rápida</span></div>
       <label class="row" style="gap:10px;color:var(--text)"><input type="checkbox" id="autoRead" style="width:auto" ${settings.autoRead ? 'checked' : ''}> Leer en voz alta los módulos automáticamente</label>
@@ -195,9 +198,7 @@ views.settings = () => {
   const $ = (id) => document.getElementById(id);
   if ($('voiceSel')) $('voiceSel').onchange = () => { settings.voiceURI = $('voiceSel').value; save(); speak('Hola, esta es mi voz.'); };
   if ($('allVoices')) $('allVoices').onclick = () => { view.allVoices = !view.allVoices; render(); };
-  app.querySelectorAll('[data-pitch]').forEach((b) => b.onclick = () => { settings.pitch = +b.dataset.pitch; save(); render(); speak('Hola, así sueno ahora.'); });
-  $('pitch').oninput = (e) => { settings.pitch = +e.target.value; $('pitchVal').textContent = settings.pitch.toFixed(2); app.querySelectorAll('[data-pitch]').forEach((b) => b.classList.toggle('on', Math.abs(settings.pitch - +b.dataset.pitch) < 0.01)); save(); };
-  $('pitch').onchange = () => speak('Hola, así sueno ahora.');
+  app.querySelectorAll('[data-len]').forEach((b) => b.onclick = () => { settings.length = b.dataset.len; save(); render(); });
   $('rate').oninput = (e) => { settings.rate = +e.target.value; $('rateVal').textContent = settings.rate.toFixed(2) + 'x'; save(); };
   $('rate').onchange = () => speak('Así suena esta velocidad.');
   $('autoRead').onchange = (e) => { settings.autoRead = e.target.checked; save(); };
@@ -215,14 +216,14 @@ views.home = () => {
   setHeader('Profe de Voz');
   const items = subjects.map((s) => {
     const done = s.stages.filter((x) => x.done).length;
-    const avg = average(s.stages.flatMap((x) => x.exams.map((e) => e.score)));
-    const scored = s.stages.filter((x) => x.exams.length);
-    const rows = scored.map((x) => { const best = Math.max(...x.exams.map((e) => e.score));
+    const avg = average(s.stages.map(stageScore).filter((x) => x != null));
+    const scored = s.stages.filter((x) => stageScore(x) != null);
+    const rows = scored.map((x) => { const best = stageScore(x);
       return `<div class="between score-row"><span>${esc(x.title)}</span><span class="pill ${best >= PASS ? 'ok' : 'bad'}">${fmt(best)}</span></div>`; }).join('');
     return `<div class="card tap" data-sid="${s.id}">
       <div class="between"><b>${esc(s.topic)}</b>${avg != null ? `<span class="pill ${avg >= PASS ? 'ok' : 'bad'}">Promedio ${fmt(avg)}</span>` : ''}</div>
       <div class="bar"><div style="width:${(100 * done) / s.stages.length}%"></div></div>
-      <div class="muted small" style="margin-top:6px">Aprendiste ${done} de ${s.stages.length} etapas${scored.length ? ` · ${((n) => n + (n === 1 ? ' examen rendido' : ' exámenes rendidos'))(s.stages.reduce((n, x) => n + x.exams.length, 0))}` : ' · todavía sin exámenes'}</div>
+      <div class="muted small" style="margin-top:6px">Aprendiste ${done} de ${s.stages.length} etapas${scored.length ? ` · ${((n) => n + (n === 1 ? ' examen rendido' : ' exámenes rendidos'))(s.stages.reduce((n, x) => n + x.exams.length + (x.modules || []).reduce((a, m) => a + (m.scores || []).length, 0), 0))}` : ' · todavía sin exámenes'}</div>
       ${rows ? `<div class="score-list">${rows}</div>` : ''}</div>`;
   }).join('');
   app.innerHTML = `
@@ -270,18 +271,17 @@ views.subject = () => {
       <div class="muted small" style="margin-top:6px">${done} de ${s.stages.length} etapas aprobadas</div></div>
     ${s.stages.map((st, i) => {
       const state = st.done ? 'done' : i === s.current ? 'current' : i > s.current ? 'locked' : '';
-      const best = st.exams.length ? Math.max(...st.exams.map((e) => e.score)) : null;
+      const best = stageScore(st);
       const open = view.open === undefined ? state === 'current' : view.open === i;
       return `<div class="card ${state}">
         <div class="stage-head tap" data-toggle="${i}"><div class="num">${st.done ? '✓' : i + 1}</div>
           <div class="grow" style="flex:1"><b>${esc(st.title)}</b><div class="muted small">${esc(st.summary)}${state === 'locked' ? ' · 🔒 Se habilita al aprobar la anterior' : ''}</div></div>
           ${best != null ? `<span class="pill ${best >= PASS ? 'ok' : 'bad'}">${fmt(best)}</span>` : ''}</div>
         ${open && state !== 'locked' ? `
-          <div class="modules">${(st.modules || []).map((m, k) => `<div class="mod ${m.seen ? 'seen' : ''}" data-mod="${i}:${k}"><span class="dot"></span><span>${esc(m.title)}</span></div>`).join('')}
+          <div class="modules">${(st.modules || []).map((m, k) => `<div class="mod ${modBest(m) >= PASS ? 'seen' : ''}" data-mod="${i}:${k}"><span class="dot"></span><span style="flex:1">${esc(m.title)}</span>${modBest(m) != null ? `<span class="pill ${modBest(m) >= PASS ? 'ok' : 'bad'}">${fmt(modBest(m))}</span>` : ''}</div>`).join('')}
             ${!st.modules || !st.modules.length ? '<div class="muted small">Tocá "Empezar" para armar los módulos.</div>' : ''}</div>
           <div class="stage-actions">
             <button data-start="${i}">${(st.modules || []).some((m) => m.seen) ? 'Seguir' : 'Empezar'}</button>
-            <button class="soft" data-exam="${i}">Exámenes</button>
           </div>` : ''}
       </div>`;
     }).join('')}
@@ -298,10 +298,9 @@ views.subject = () => {
       el.disabled = true; el.textContent = 'Armando módulos…';
       try { await ensureModules(s, i); } catch (e) { el.disabled = false; el.textContent = 'Empezar'; alertBox(e.message); return; }
     }
-    const k = Math.max(0, st.modules.findIndex((m) => !m.seen));
+    const k = Math.max(0, st.modules.findIndex((m) => !(modBest(m) >= PASS)));
     go('module', { sid: s.id, si: i, mi: k });
   });
-  app.querySelectorAll('[data-exam]').forEach((el) => el.onclick = () => go('examMenu', { sid: s.id, si: +el.dataset.exam }));
   document.getElementById('delSubj').onclick = () => {
     if (!confirm(`¿Borrar "${s.topic}" y todo su progreso?`)) return;
     subjects = subjects.filter((x) => x !== s); save(); stack.length = 0; go('home', {}, false);
@@ -334,7 +333,7 @@ async function loadModule(s, st, m) {
     m.content = await askClaude(TEACHER + `
 Estás enseñando "${s.topic}". Temario: ${s.stages.map((x, n) => `${n + 1}. ${x.title}`).join(' | ')}.
 Etapa actual: "${st.title}". Módulos de esta etapa: ${st.modules.map((x) => x.title).join(' | ')}.
-Escribí SOLO el contenido del módulo que te pidan: entre 90 y 150 palabras, en 2 o 3 párrafos cortos, con un ejemplo concreto de la vida real. Sin saludo ni despedida, sin repetir el título.`,
+Escribí SOLO el contenido del módulo que te pidan. ${lengthRule()} Sin saludo ni despedida, sin repetir el título.`,
       [{ role: 'user', content: `Módulo: "${m.title}"` }], 700);
     save();
     if (view === keep) drawModule(s, st, m);
@@ -345,23 +344,28 @@ Escribí SOLO el contenido del módulo que te pidan: entre 90 y 150 palabras, en
 }
 function drawModule(s, st, m) {
   m.seen = true; save();
-  const last = view.mi === st.modules.length - 1;
   document.getElementById('modBody').innerHTML = `
-    <div style="margin:10px 0 14px">${listenBtn('mod')}</div>
+    <div class="row" style="margin:10px 0 14px">${listenBtn('mod')}<button class="plain small" id="shorter">✂ Más corto</button></div>
     <div class="lesson">${esc(m.content)}</div>
     <div class="row" style="margin-top:24px">
       ${view.mi > 0 ? '<button class="soft" id="prev">← Anterior</button>' : ''}
       <span class="grow"></span>
-      ${last ? '<button id="toExam">Ir a los exámenes</button>' : '<button id="next">Siguiente →</button>'}
+      <button id="toExam">Listo, tomame examen →</button>
     </div>
     <h2>¿Tenés una duda?</h2>
     <div class="chat" id="chat">${m.chat.map((c) => `<div class="msg ${c.role === 'user' ? 'me' : 'ai'}">${esc(c.content)}</div>`).join('')}</div>
     <div class="row" style="margin-top:10px"><input class="grow" id="q" placeholder="Escribí o dictá tu pregunta"><button id="ask">Preguntar</button></div>`;
   const lb = app.querySelector('[data-speak]');
   lb.onclick = () => speak(m.title + '. ' + m.content, lb);
+  document.getElementById('shorter').onclick = async (e) => {
+    const b = e.currentTarget; b.disabled = true; b.textContent = 'Resumiendo…';
+    try {
+      m.content = await askClaude(TEACHER, [{ role: 'user', content: `Resumí este texto a la mitad o menos (máximo 40 palabras), simple y directo, sin perder la idea principal:\n${m.content}` }], 300);
+      save(); stopSpeaking(); drawModule(s, st, m);
+    } catch (err) { b.disabled = false; b.textContent = '✂ Más corto'; alertBox(err.message); }
+  };
   const p = document.getElementById('prev'); if (p) p.onclick = () => go('module', { sid: s.id, si: view.si, mi: view.mi - 1 }, false);
-  const n = document.getElementById('next'); if (n) n.onclick = () => go('module', { sid: s.id, si: view.si, mi: view.mi + 1 }, false);
-  const te = document.getElementById('toExam'); if (te) te.onclick = () => go('examMenu', { sid: s.id, si: view.si }, false);
+  const te = document.getElementById('toExam'); te.onclick = () => startModuleExam(s, view.si, view.mi, te);
   const q = document.getElementById('q'), ask = document.getElementById('ask');
   q.onkeydown = (e) => { if (e.key === 'Enter') ask.click(); };
   ask.onclick = async () => {
@@ -369,7 +373,7 @@ function drawModule(s, st, m) {
     q.value = ''; ask.disabled = true;
     m.chat.push({ role: 'user', content: text }); drawChat(m);
     try {
-      const reply = await askClaude(TEACHER + ` Estás en el módulo "${m.title}" del tema "${s.topic}". Este es el contenido que leyó el alumno:\n${m.content}\nRespondé su duda en menos de 100 palabras.`,
+      const reply = await askClaude(TEACHER + ` Estás en el módulo "${m.title}" del tema "${s.topic}". Este es el contenido que leyó el alumno:\n${m.content}\nRespondé su duda ${settings.length === 'corto' ? 'en 1 a 3 frases cortas' : 'en menos de 100 palabras'}.`,
         m.chat.slice(-12).map((c) => ({ role: c.role, content: c.content })), 600);
       m.chat.push({ role: 'assistant', content: reply }); save(); drawChat(m);
       if (settings.autoRead) speak(reply);
@@ -389,6 +393,17 @@ const EXAMS = {
   integrador: { name: 'Examen integrador', n: 6, desc: 'Mezcla preguntas de todas las etapas que ya viste.', unlocks: false },
   practico: { name: 'Caso práctico', n: 2, desc: '2 situaciones reales donde tenés que aplicar lo aprendido.', unlocks: false },
 };
+
+EXAMS.modulo = { name: 'Examen del módulo', n: 2, desc: '', unlocks: false };
+async function startModuleExam(s, si, mi, btn) {
+  const m = s.stages[si].modules[mi];
+  btn.disabled = true; btn.textContent = 'Preparando examen…';
+  try {
+    const j = await askJSON(TEACHER, `Tema: ${s.topic}. El alumno acaba de leer este módulo, "${m.title}":\n${m.content}\n` +
+      'Armá 2 preguntas abiertas y cortas sobre ESTE contenido, que se respondan en 1 o 2 frases. Forma: {"questions":["...","..."]}', 600);
+    go('exam', { sid: s.id, si, mi, type: 'modulo', questions: j.questions.slice(0, 2), answers: [], idx: 0 }, false);
+  } catch (e) { btn.disabled = false; btn.textContent = 'Listo, tomame examen →'; alertBox(e.message); }
+}
 
 views.examMenu = () => {
   const s = getSubj(), st = s.stages[view.si];
@@ -465,6 +480,11 @@ views.exam = () => {
     } catch (e) { send.disabled = false; document.getElementById('examStatus').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
   };
 };
+const modBest = (m) => (m.scores && m.scores.length ? Math.max(...m.scores) : null);
+function stageScore(st) {
+  const xs = (st.modules || []).map(modBest).filter((x) => x != null).concat(st.exams.map((e) => e.score));
+  return xs.length ? average((st.modules || []).map(modBest).filter((x) => x != null).length ? (st.modules || []).map(modBest).filter((x) => x != null) : xs) : null;
+}
 const clamp = (n) => Math.max(1, Math.min(10, Math.round(+n || 1)));
 const average = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 
@@ -472,8 +492,18 @@ function finishExam(s) {
   const st = s.stages[view.si], cfg = EXAMS[view.type];
   const correct = average(view.answers.map((a) => a.correct)), clarity = average(view.answers.map((a) => a.clarity));
   const score = Math.round(((correct + clarity) / 2) * 10) / 10;
-  st.exams.push({ type: view.type, date: Date.now(), score, correct, clarity });
   let unlocked = false;
+  if (view.type === 'modulo') {
+    const m = st.modules[view.mi];
+    m.scores = m.scores || []; m.scores.push(score); m.seen = true;
+    if (!st.done && st.modules.every((x) => modBest(x) >= PASS)) {
+      st.done = true; unlocked = true;
+      if (s.current === view.si) s.current = Math.min(view.si + 1, s.stages.length - 1);
+    }
+    save();
+    return go('result', { sid: s.id, si: view.si, mi: view.mi, type: 'modulo', score, correct, clarity, unlocked }, false);
+  }
+  st.exams.push({ type: view.type, date: Date.now(), score, correct, clarity });
   if (cfg.unlocks && score >= PASS && !st.done) {
     st.done = true; unlocked = true;
     if (s.current === view.si) s.current = Math.min(view.si + 1, s.stages.length - 1);
@@ -485,22 +515,32 @@ function finishExam(s) {
 views.result = () => {
   const s = getSubj(), st = s.stages[view.si], cfg = EXAMS[view.type], ok = view.score >= PASS;
   setHeader('Resultado');
-  const msg = ok ? (view.unlocked ? '¡Aprobaste! Se habilitó la etapa siguiente.' : view.score >= 8 ? '¡Excelente!' : '¡Muy bien!') : 'Todavía no. Repasá los módulos y probá de nuevo.';
+  const isMod = view.type === 'modulo';
+  const m = isMod ? st.modules[view.mi] : null;
+  const lastMod = isMod && view.mi === st.modules.length - 1;
+  const msg = ok ? (view.unlocked ? '¡Terminaste la etapa! Se habilitó la siguiente.' : view.score >= 8 ? '¡Excelente!' : '¡Muy bien!') : 'Todavía no. Repetí el módulo y probá de nuevo.';
   app.innerHTML = `
     <div class="result-screen ${ok ? 'pass' : 'fail'}">
       <div class="result-inner">
-        <div class="result-topic">${esc(cfg.name)} · ${esc(st.title)}</div>
+        <div class="result-topic">${isMod ? esc(m.title) : esc(cfg.name) + ' · ' + esc(st.title)}</div>
         <div class="result-label">Te sacaste</div>
         <div class="result-num">${fmt(view.score)}</div>
         <div class="result-msg">${msg}</div>
         <div class="result-sub"><span>Corrección <b>${fmt(view.correct)}</b></span><span>Claridad <b>${fmt(view.clarity)}</b></span></div>
-        <button class="block result-btn" id="toSubj">Volver al temario</button>
-        <button class="block result-btn ghost" id="again">Elegir otro examen</button>
+        ${isMod ? `
+          ${ok ? '' : '<button class="block result-btn" id="repeat">↻ Repetir módulo</button>'}
+          ${!lastMod ? `<button class="block result-btn ${ok ? '' : 'ghost'}" id="nextMod">Siguiente módulo →</button>` : ''}
+          ${ok ? `<button class="block result-btn ${lastMod ? '' : 'ghost'}" id="repeat">↻ Repetir módulo</button>` : ''}
+          <button class="block result-btn ghost" id="toSubj">Volver al temario</button>` : `
+          <button class="block result-btn" id="toSubj">Volver al temario</button>
+          <button class="block result-btn ghost" id="again">Elegir otro examen</button>`}
       </div>
     </div>`;
   speak(`Te sacaste ${fmt(view.score)}. ${msg}`);
   document.getElementById('toSubj').onclick = () => { stack.length = 0; view = { name: 'home' }; go('subject', { sid: s.id }); };
-  document.getElementById('again').onclick = () => go('examMenu', { sid: s.id, si: view.si }, false);
+  const ag = document.getElementById('again'); if (ag) ag.onclick = () => go('examMenu', { sid: s.id, si: view.si }, false);
+  const nm = document.getElementById('nextMod'); if (nm) nm.onclick = () => go('module', { sid: s.id, si: view.si, mi: view.mi + 1 }, false);
+  const rp = document.getElementById('repeat'); if (rp) rp.onclick = () => go('module', { sid: s.id, si: view.si, mi: view.mi }, false);
 };
 const fmt = (n) => (Math.round(n * 10) / 10).toString().replace('.', ',');
 
