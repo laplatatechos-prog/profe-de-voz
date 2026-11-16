@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 15;
+const APP_VERSION = 16;
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
 const tint = (i) => PALETTE[i % PALETTE.length];
 const PASS = 6; // nota mínima para aprobar el examen de etapa
@@ -63,8 +63,9 @@ async function askJSON(system, user, maxTokens = 2000) {
 const lengthRule = (short = settings.length === 'corto') => short
   ? 'Muy breve y directo: entre 35 y 60 palabras, frases cortas y simples, la idea principal y un ejemplo de una línea. Nada de relleno.'
   : 'Entre 90 y 150 palabras, en 2 o 3 párrafos cortos, con un ejemplo concreto de la vida real.';
-const TEACHER = 'Sos un profesor claro y paciente que enseña a un adulto de Argentina. Hablale de vos, en español rioplatense. ' +
+const TEACHER_BASE = 'Sos un profesor claro y paciente que enseña a una persona de Argentina. Hablale de vos, en español rioplatense. ' +
   'Tus textos también se leen en voz alta: no uses markdown, asteriscos, numerales, viñetas, tablas ni emojis.';
+const teacher = () => TEACHER_BASE + (settings.name ? ` El alumno se llama ${settings.name}; usá su nombre de vez en cuando.` : '');
 
 // ---------- Voz ----------
 // Usa las voces gratis del navegador/teléfono, priorizando las más naturales.
@@ -284,6 +285,8 @@ views.settings = () => {
       <div style="margin-top:14px"><button class="soft" id="testVoice">▶ Probar voz</button></div>
     </div>
 
+    <h2>Tu nombre</h2>
+    <div class="card"><div class="row"><input class="grow" id="nameSet" placeholder="Tu nombre" value="${esc(settings.name || '')}"><button class="soft" id="nameSave">Guardar</button></div></div>
     <h2>Clave de Claude</h2>
     <div class="card">
       <p class="muted" style="margin-top:0">Se guarda solo en este equipo.</p>
@@ -331,6 +334,7 @@ views.settings = () => {
   $('rate').onchange = () => speak('Así suena esta velocidad.');
   $('autoRead').onchange = (e) => { settings.autoRead = e.target.checked; save(); };
   $('testVoice').onclick = () => speak('Hola, soy tu profe. Vamos a aprender juntos, de a poco.', $('testVoice'));
+  $('nameSave').onclick = () => { settings.name = $('nameSet').value.trim(); save(); toast(settings.name ? `Listo, ${settings.name}.` : 'Nombre borrado.'); };
   $('wipe').onclick = () => {
     if (!confirm('¿Seguro que querés borrar todas las áreas y puntajes? No se puede deshacer.')) return;
     subjects = []; save(); stack.length = 0; view = { name: 'home' }; render(); toast('Listo, se borró todo.');
@@ -361,6 +365,9 @@ views.home = () => {
   }).join('');
   app.innerHTML = `
     ${!settings.key ? `<div class="card" style="background:var(--accent-soft);border-color:transparent">Para empezar, cargá tu clave de Claude en <a href="#" id="toSettings">Configuración</a>.</div>` : ''}
+    ${!settings.name ? `<div class="card name-card"><b>👋 ¡Hola! ¿Cómo te llamás?</b>
+      <div class="row" style="margin-top:10px"><input class="grow" id="nameInput" placeholder="Tu nombre"><button id="nameGo">Listo</button></div></div>`
+      : `<div class="hello">Hola, ${esc(settings.name)} 👋</div>`}
     <h2>Nuevo tema</h2>
     <div class="card">
       <div class="row"><input class="grow" id="topicInput" placeholder="¿Qué querés aprender? Ej: inteligencia artificial"><button id="topicGo">Crear</button></div>
@@ -368,6 +375,9 @@ views.home = () => {
     </div>
     <h2>Mis áreas</h2>
     ${items || '<p class="muted">Todavía no agregaste ninguna.</p>'}`;
+  const ng = document.getElementById('nameGo');
+  if (ng) { const ni = document.getElementById('nameInput'); ni.onkeydown = (e) => { if (e.key === 'Enter') ng.click(); };
+    ng.onclick = () => { const n = ni.value.trim(); if (!n) return; settings.name = n; save(); render(); speak(`Hola ${n}, soy tu profe. ¿Qué querés aprender hoy?`); }; }
   const ts = document.getElementById('toSettings'); if (ts) ts.onclick = (e) => { e.preventDefault(); go('settings'); };
   app.querySelectorAll('[data-sid]').forEach((el) => el.onclick = () => go('subject', { sid: el.dataset.sid }));
   const inp = document.getElementById('topicInput');
@@ -444,7 +454,7 @@ function alertBox(msg) { const d = document.createElement('div'); d.className = 
 async function ensureModules(s, i) {
   const st = s.stages[i];
   if (st.modules && st.modules.length) return;
-  const j = await askJSON(TEACHER, `Tema: ${s.topic}. Etapa: "${st.title}" (${st.summary}). Dividila en 3 a 5 módulos MUY cortos. Forma: {"modules":[{"title":"..."}]}`, 800);
+  const j = await askJSON(teacher(), `Tema: ${s.topic}. Etapa: "${st.title}" (${st.summary}). Dividila en 3 a 5 módulos MUY cortos. Forma: {"modules":[{"title":"..."}]}`, 800);
   st.modules = j.modules.map((m) => ({ title: m.title, content: null, seen: false, chat: [] }));
   save();
 }
@@ -454,7 +464,7 @@ async function ensureModules(s, i) {
 // Son 2 pasos por módulo; si el alumno pide más detalle, recién ahí se extiende. Al final: puntaje, nivel y chiste.
 const STEPS = 2;
 function learnSystem(s, st, m) {
-  return TEACHER + `
+  return teacher() + `
 Estás enseñando "${s.topic}". Etapa: "${st.title}". Módulo: "${m.title}".
 Enseñás este módulo en ${STEPS} pasos, como una charla. En cada paso explicás UNA sola idea en 1 o 2 frases muy cortas (máximo 30 palabras en total) y enseguida hacés UNA pregunta corta sobre esa idea.
 Siempre respondés SOLO con JSON válido, sin texto extra:
@@ -542,7 +552,7 @@ async function startModuleExam(s, si, mi, btn) {
   const m = s.stages[si].modules[mi];
   btn.disabled = true; btn.textContent = 'Preparando examen…';
   try {
-    const j = await askJSON(TEACHER, `Tema: ${s.topic}. El alumno acaba de leer este módulo, "${m.title}":\n${m.content}\n` +
+    const j = await askJSON(teacher(), `Tema: ${s.topic}. El alumno acaba de leer este módulo, "${m.title}":\n${m.content}\n` +
       'Armá 2 preguntas abiertas y cortas sobre ESTE contenido, que se respondan en 1 o 2 frases. Forma: {"questions":["...","..."]}', 600);
     go('exam', { sid: s.id, si, mi, type: 'modulo', questions: j.questions.slice(0, 2), answers: [], idx: 0 }, false);
   } catch (e) { btn.disabled = false; btn.textContent = 'Listo, tomame examen →'; alertBox(e.message); }
@@ -570,7 +580,7 @@ async function startExam(s, si, type, btn) {
   const kind = type === 'practico' ? 'situaciones prácticas de la vida real donde haya que aplicar lo aprendido (cada una de 2 o 3 frases, terminando en una pregunta)'
     : 'preguntas abiertas y concretas que se respondan en 1 a 4 frases';
   try {
-    const j = await askJSON(TEACHER, `Tema: ${s.topic}. Contenido a evaluar: ${scope}.
+    const j = await askJSON(teacher(), `Tema: ${s.topic}. Contenido a evaluar: ${scope}.
 Armá ${cfg.n} ${kind}, variadas, de dificultad progresiva. Forma: {"questions":["...","..."]}`, 1200);
     go('exam', { sid: s.id, si, type, questions: j.questions.slice(0, cfg.n), answers: [], idx: 0 });
   } catch (e) { btn.disabled = false; btn.querySelector('span').textContent = cfg.desc; alertBox(e.message); }
@@ -613,7 +623,7 @@ views.exam = () => {
     if (!answer) return;
     send.disabled = true; document.getElementById('examStatus').textContent = 'Corrigiendo…';
     try {
-      const g = await askJSON(TEACHER + ' Corregís exámenes con justicia y de forma alentadora, marcando qué faltó o qué estuvo mal.',
+      const g = await askJSON(teacher() + ' Corregís exámenes con justicia y de forma alentadora, marcando qué faltó o qué estuvo mal.',
         `Tema: ${s.topic}. Pregunta: ${q}\nRespuesta del alumno: ${answer}\n` +
         'Poné dos notas enteras del 1 al 10: "correct" (qué tan correcta y completa es) y "clarity" (qué tan clara, ordenada y precisa es la explicación; si es correcta pero confusa, baja esta nota). ' +
         'Forma: {"correct":0,"clarity":0,"feedback":"2 a 4 frases: qué estuvo bien, qué faltó o estuvo mal, y cómo decirlo más claro","ideal":"una respuesta modelo breve"}', 800);
@@ -684,7 +694,7 @@ views.result = () => {
       <div class="result-inner">
         <div class="result-topic">${isMod ? esc(m.title) : esc(cfg.name) + ' · ' + esc(st.title)}</div>
         <div class="result-emoji">${levelOf(view.score)[2]}</div>
-        <div class="result-label">Sacaste</div>
+        <div class="result-label">${settings.name ? esc(settings.name) + ", sacaste" : "Sacaste"}</div>
         <div class="result-num">${fmt(view.score)}</div>
         <div class="result-level">${levelOf(view.score)[3]}</div>
         <div class="result-joke">${esc(view.joke)}</div>
@@ -700,7 +710,7 @@ views.result = () => {
           <button class="block result-btn ghost" id="again">Elegir otro examen</button>`}
       </div>
     </div>`;
-  speak(`Sacaste ${fmt(view.score)}. ${levelOf(view.score)[3]}. ${view.joke} ${msg}`);
+  speak(`${settings.name ? settings.name + ', sacaste' : 'Sacaste'} ${fmt(view.score)}. ${levelOf(view.score)[3]}. ${view.joke} ${msg}`);
   if (ok) confetti();
   document.getElementById('toSubj').onclick = () => { stack.length = 0; view = { name: 'home' }; go('subject', { sid: s.id }); };
   const ag = document.getElementById('again'); if (ag) ag.onclick = () => go('examMenu', { sid: s.id, si: view.si }, false);
