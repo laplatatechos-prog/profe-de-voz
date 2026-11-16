@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Profe de Voz</title>
+<meta name="theme-color" content="#14161c">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #14161c; --card: #1f222b; --line: #2e323d; --text: #eef0f4; --muted: #9aa1b0;
+    --accent: #5b8cff; --ok: #3ccf8e; --warn: #ffb547; --bad: #ff6b6b;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { --bg:#f5f6f9; --card:#fff; --line:#e1e4ea; --text:#15171c; --muted:#5d6472; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size:17px; }
+  body { min-height:100vh; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  header { display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line);
+    position:sticky; top:0; background:var(--bg); z-index:5; }
+  header h1 { font-size:19px; margin:0; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  main { max-width:720px; margin:0 auto; padding:16px; }
+  button { font:inherit; border:0; border-radius:12px; padding:12px 16px; cursor:pointer;
+    background:var(--accent); color:#fff; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  button.icon { padding:8px 12px; background:transparent; color:var(--text); font-size:20px; }
+  button:disabled { opacity:.5; }
+  input, textarea { font:inherit; width:100%; padding:12px; border-radius:12px; border:1px solid var(--line);
+    background:var(--card); color:var(--text); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:12px; }
+  .muted { color:var(--muted); font-size:15px; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .row > input { flex:1; }
+  .hidden { display:none !important; }
+  .mic { width:96px; height:96px; border-radius:50%; font-size:40px; display:grid; place-items:center;
+    margin:18px auto 8px; background:var(--accent); box-shadow:0 6px 24px rgba(91,140,255,.35); }
+  .mic.listening { background:var(--bad); animation:pulse 1.1s infinite; }
+  .mic.speaking { background:var(--ok); }
+  @keyframes pulse { 0%{transform:scale(1)} 50%{transform:scale(1.08)} 100%{transform:scale(1)} }
+  .status { text-align:center; min-height:22px; }
+  .subject { display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
+  .bar { height:8px; background:var(--line); border-radius:4px; overflow:hidden; margin-top:8px; }
+  .bar > div { height:100%; background:var(--ok); }
+  .stage { display:flex; gap:12px; align-items:flex-start; cursor:pointer; }
+  .stage .n { width:32px; height:32px; flex:none; border-radius:50%; display:grid; place-items:center;
+    background:var(--line); font-weight:600; }
+  .stage.done .n { background:var(--ok); color:#06210f; }
+  .stage.current .n { background:var(--accent); color:#fff; }
+  .stage.locked { opacity:.55; }
+  .chat { display:flex; flex-direction:column; gap:10px; margin-bottom:120px; }
+  .msg { padding:12px 14px; border-radius:14px; max-width:90%; line-height:1.45; white-space:pre-wrap; }
+  .msg.ai { background:var(--card); border:1px solid var(--line); align-self:flex-start; }
+  .msg.me { background:var(--accent); color:#fff; align-self:flex-end; }
+  .dock { position:fixed; left:0; right:0; bottom:0; background:var(--bg); border-top:1px solid var(--line);
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom)); }
+  .dock .inner { max-width:720px; margin:0 auto; display:flex; gap:8px; align-items:center; }
+  .dock .mic { width:56px; height:56px; font-size:24px; margin:0; flex:none; }
+  .err { color:var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <button class="icon hidden" id="backBtn" aria-label="Volver">←</button>
+  <h1 id="title">Profe de Voz</h1>
+  <button class="icon" id="settingsBtn" aria-label="Ajustes">⚙️</button>
+</header>
+<main>
+
+  <!-- AJUSTES -->
+  <section id="v-settings" class="hidden">
+    <div class="card">
+      <h3 style="margin-top:0">Tu clave de Claude</h3>
+      <p class="muted">La app usa tu propia clave de API. Se guarda solo en este equipo, nunca se sube a ningún lado.</p>
+      <input id="keyInput" type="password" placeholder="sk-ant-..." autocomplete="off">
+      <div class="row" style="margin-top:10px">
+        <button id="saveKey">Guardar</button>
+        <span id="keyMsg" class="muted"></span>
+      </div>
+      <p class="muted">¿No tenés clave? Entrá a <b>console.anthropic.com</b>, creá una cuenta, cargá crédito (con USD 5 alcanza para empezar) y en "API Keys" tocá "Create Key". Copiala y pegala acá.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Voz</h3>
+      <label class="muted">Velocidad de lectura: <span id="rateVal"></span></label>
+      <input id="rate" type="range" min="0.7" max="1.5" step="0.05">
+      <div class="row" style="margin-top:10px"><button class="ghost" id="testVoice">Probar voz</button></div>
+    </div>
+  </section>
+
+  <!-- INICIO -->
+  <section id="v-home" class="hidden">
+    <div class="card" style="text-align:center">
+      <div style="font-size:18px">¿Qué querés aprender?</div>
+      <button class="mic" id="topicMic" aria-label="Hablar">🎤</button>
+      <div class="status muted" id="homeStatus">Tocá el micrófono y decí un tema, por ejemplo "inteligencia artificial"</div>
+      <div class="row" style="margin-top:12px">
+        <input id="topicInput" placeholder="O escribilo acá">
+        <button id="topicGo">Crear</button>
+      </div>
+    </div>
+    <h3>Mis áreas</h3>
+    <div id="subjects"><p class="muted">Todavía no agregaste ninguna.</p></div>
+  </section>
+
+  <!-- TEMARIO -->
+  <section id="v-subject" class="hidden">
+    <div class="card">
+      <div id="subjDesc" class="muted"></div>
+      <div class="bar"><div id="subjBar" style="width:0"></div></div>
+    </div>
+    <div id="stages"></div>
+    <button class="ghost" id="deleteSubject" style="margin-top:20px">Borrar esta área</button>
+  </section>
+
+  <!-- CLASE -->
+  <section id="v-lesson" class="hidden">
+    <div class="chat" id="chat"></div>
+  </section>
+</main>
+
+<div class="dock hidden" id="dock">
+  <div class="inner">
+    <button class="mic" id="lessonMic" aria-label="Hablar">🎤</button>
+    <input id="lessonInput" placeholder="Hablá o escribí tu pregunta">
+    <button id="lessonSend">➤</button>
+  </div>
+  <div class="status muted" id="lessonStatus" style="max-width:720px;margin:6px auto 0"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
