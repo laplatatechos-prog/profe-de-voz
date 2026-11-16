@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 29;
+const APP_VERSION = 30;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -95,7 +95,7 @@ const TEACHER_BASE = 'Sos un profesor claro y paciente que enseña a una persona
   'Tenés mucha personalidad: sos expresivo, irónico y gracioso, con sarcasmo cariñoso bien argentino y exageraciones ("¡Pará, pará! ¿Me estás cargando? ¡Eso estuvo bárbaro!", "Mirá vos, casi casi… como el colectivo que se te escapa por un metro"). ' +
   'Usá exclamaciones, preguntas retóricas y comparaciones de la vida cotidiana argentina (el mate, el colectivo, la abuela, el asado, el fútbol). Nunca ofendas ni humilles: la ironía siempre es con cariño y para motivar. La claridad de la explicación es lo primero. ' +
   'Tus textos también se leen en voz alta: no uses markdown, asteriscos, numerales, viñetas, tablas ni emojis.';
-const teacher = () => TEACHER_BASE + (settings.name ? ` El alumno se llama ${settings.name}; usá su nombre de vez en cuando.` : '');
+const teacher = () => TEACHER_BASE + ' No uses el nombre del alumno: hablale directo, sin nombrarlo (la app lo nombra sola al final del examen).';
 
 // ---------- Voz ----------
 // Usa las voces gratis del navegador/teléfono, priorizando las más naturales.
@@ -599,7 +599,7 @@ views.home = () => {
       <div class="row" style="margin-top:10px"><input class="grow" id="nameInput" placeholder="Tu nombre"><button id="nameGo">Listo</button></div></div>`
       : `<div class="hello">Hola, ${esc(settings.name)} 👋</div>`}
     <div class="card ask-card">
-      <div class="ask-q">${settings.name ? esc(settings.name) + ', ¿qué' : '¿Qué'} querés estudiar hoy? 📚</div>
+      <div class="ask-q">¿Qué querés estudiar hoy? 📚</div>
       <input id="topicInput" class="ask-input" placeholder="Escribí o dictá un tema. Ej: reels, inteligencia artificial">
       <button id="topicGo" class="block" style="margin-top:10px">Empezar a estudiar →</button>
       <div id="homeStatus" class="muted small" style="margin-top:8px"></div>
@@ -609,13 +609,13 @@ views.home = () => {
     ${items || '<p class="muted">Todavía no agregaste ninguna.</p>'}`;
   const ng = document.getElementById('nameGo');
   if (ng) { const ni = document.getElementById('nameInput'); ni.onkeydown = (e) => { if (e.key === 'Enter') ng.click(); };
-    ng.onclick = () => { const n = ni.value.trim(); if (!n) return; settings.name = n; save(); render(); speak(`Hola ${n}, soy tu profe. ¿Qué querés aprender hoy?`); }; }
+    ng.onclick = () => { const n = ni.value.trim(); if (!n) return; settings.name = n; save(); render(); speak(`Hola, soy tu profe. ¿Qué querés aprender hoy?`); }; }
   const tr = document.getElementById('toRank'); if (tr) tr.onclick = () => go('ranking');
   document.getElementById('shareBtn').onclick = () => shareApp();
   const ts = document.getElementById('toSettings'); if (ts) ts.onclick = (e) => { e.preventDefault(); go('settings'); };
   app.querySelectorAll('[data-sid]').forEach((el) => el.onclick = () => go('subject', { sid: el.dataset.sid }));
   const inp = document.getElementById('topicInput');
-  if (settings.name && settings.autoRead && !view.asked) { view.asked = true; speak(`${settings.name}, ¿qué querés estudiar hoy?`); }
+  if (settings.name && settings.autoRead && !view.asked) { view.asked = true; speak('¿Qué querés estudiar hoy?'); }
   inp.onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('topicGo').click(); };
   document.getElementById('topicGo').onclick = () => { const t = inp.value.trim(); if (t) createSubject(t); };
 };
@@ -737,7 +737,7 @@ function drawTurns() {
   chat.querySelectorAll('[data-say]').forEach((b) => b.onclick = () => speak(turnText(view.turns[+b.dataset.say])));
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
-const scoreLine = (n, lv) => `${settings.name ? settings.name + ', sacaste' : 'Sacaste'} ${fmt(n)}. ${lv ? lv.sos : levelOf(n)[3]}.${lv && lv.sound ? ` {{s:${lv.sound}}}` : ''}`;
+const scoreLine = (n, lv, withName) => `${withName && settings.name ? settings.name + ', sacaste' : 'Sacaste'} ${fmt(n)}. ${lv ? lv.sos : levelOf(n)[3]}.${lv && lv.sound ? ` {{s:${lv.sound}}}` : ''}`;
 // Pausa dramática antes del remate del chiste.
 const dramatic = (j) => { if (!j) return ''; const s = j.match(/[^.!?…]+[.!?…]+["”]?\s*/g) || [j]; return s.length < 2 ? j : s.slice(0, -1).join('') + ' {{p}} ' + s[s.length - 1]; };
 const turnText = (t) => [t.score != null ? scoreLine(t.score, t.lv) : '', dramatic(t.joke), t.gossip, t.feedback, t.explain, t.question].filter(Boolean).join(' ');
@@ -1133,7 +1133,7 @@ let seenGossip = store.get('profe-chismes', null);
 function gossip() {
   rankingRows().catch(() => {});
   const rows = rankCache; if (!rows) return '';
-  const me = settings.name || 'che';
+  const me = 'che';
   const others = rows.filter((r) => !r.me);
   const sig = (r) => `${r.avg == null ? '-' : r.avg}|${r.level || ''}`;
   if (!seenGossip) { seenGossip = {}; } // primera vez: todo lo de los demás es novedad
@@ -1153,7 +1153,7 @@ function gossip() {
   ]);
   if (prevAvg != null && o.avg > prevAvg) return `No te quiero decir nada, pero… ${n} subió en ${tp}. Ahora tiene ${a} y está en el ${L}. Se está poniendo las pilas. Yo no te dije nada, ¿eh?`;
   if (prevAvg != null && o.avg < prevAvg) return `Esto queda entre nosotros… ${n} bajó un poquito en ${tp}. Ahora tiene ${a}, en el ${L}. Pobre, pasale un mate. Pero yo no te conté nada.`;
-  if (mine && o.avg > mine.avg) return `${me}, te cuento una cosa, pero no te quiero decir nada… ${n} ya está en el ${L} en ${tp}, con ${a}. Y vos ahí, en el ${mine.level}… Yo no te dije nada, ¿eh?`;
+  if (mine && o.avg > mine.avg) return `Che, te cuento una cosa, pero no te quiero decir nada… ${n} ya está en el ${L} en ${tp}, con ${a}. Y vos ahí, en el ${mine.level}… Yo no te dije nada, ¿eh?`;
   if (mine && o.avg < mine.avg) return `Shh, esto no te lo dije yo… en ${tp} le estás ganando a ${n}, que está en el ${L} con ${a}. Hacete el humilde, ¿eh?`;
   return pickOne([
     `Te cuento una cosa, pero no te quiero decir nada… ${n} está estudiando ${tp} y ya sacó ${a}. Está en el ${L}. Yo no te dije nada, ¿eh?`,
@@ -1256,7 +1256,7 @@ views.result = () => {
           <button class="block result-btn ghost" id="shareLvl">📤 Compartir mi nivel</button>`}
       </div>
     </div>`;
-  speak(`${scoreLine(view.score, view.lv)} {{p}} ${dramatic(view.joke)} ${view.gossip || ''} ${view.feedback || ''} ${msg}`);
+  speak(`${scoreLine(view.score, view.lv, true)} {{p}} ${dramatic(view.joke)} ${view.gossip || ''} ${view.feedback || ''} ${msg}`);
   if (ok) confetti();
   document.getElementById('toSubj').onclick = () => { stack.length = 0; view = { name: 'home' }; go('subject', { sid: s.id }); };
   document.getElementById('shareLvl').onclick = () => shareApp(`${settings.name ? settings.name + ' sacó' : 'Saqué'} ${fmt(view.score)} en ${s.topic}: ${view.lv.sos.replace(/^Sos/, settings.name ? 'es' : 'soy')} ${view.lv.emoji}. ¿Te animás a superarlo? Probá la app:`);
