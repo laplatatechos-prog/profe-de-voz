@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -883,7 +883,7 @@ views.exam = () => {
     } catch (e) { send.disabled = false; document.getElementById('examStatus').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
   };
 };
-// Niveles chistosos (de menor a mayor). "min" = nota mínima. Cada nivel tiene 8 personajes con su sonido y sus chistes cortos,
+// Niveles chistosos (de menor a mayor). "min" = nota mínima. Cada nivel tiene 12 personajes con su sonido y sus chistes cortos,
 // más chistes generales del nivel. Se van turnando sin repetir hasta usar todos. Desde 6, todos positivos.
 const LEVELS = [
   { min: 0, chars: [
@@ -895,6 +895,10 @@ const LEVELS = [
     ['Chicle pegado en el banco', 'Sos un Chicle pegado en el banco', '🫥', ['Veinte años escuchando clases abajo del banco, y nada. Estabas muy ocupado estando pegado.', 'Tu gran virtud es que no te soltás nunca. Pegate al tema, entonces.'], 'pop'],
     ['Pelusa de ombligo', 'Sos una Pelusa de ombligo', '🌀', ['Pasaste el día en un ombligo: todo azul y redondito. Panorama limitado.', 'Nadie sabe de dónde sale la pelusa. Ni esta respuesta tuya.'], 'pop'],
     ['Moho de pan viejo', 'Sos un Moho de pan viejo', '🍞', ['Lunes, un puntito. Viernes, dueño del pan entero. Vos estás en el lunes.', 'Del moho salió la penicilina. Del fondo puede salir algo genial.'], 'bubble'],
+    ['Liquen de baldosa', 'Sos un Liquen de baldosa', '🟩', ['Te pisan todos los días y ni te enterás. Igual que este tema.', 'Tardás cien años en crecer un centímetro. Vamos a necesitar paciencia.'], 'bubble'],
+    ['Papa olvidada en la alacena', 'Sos una Papa olvidada en la alacena', '🥔', ['Te salieron brotes, pero ninguna respuesta.', 'Estás quietita en la oscuridad. Salí a la luz, que hay que estudiar.'], 'thud'],
+    ['Media sin par', 'Sos una Media sin par', '🧦', ['Perdiste a tu compañera y también la respuesta. Qué día.', 'Nadie sabe adónde se van las medias. Ni las respuestas.'], 'pop'],
+    ['Grano de arena perdido', 'Sos un Grano de arena perdido', '⏳', ['Uno entre millones, y justo vos no sabías.', 'Todas las playas empiezan con un grano. Vos ya estás.'], 'swoosh'],
   ], jokes: ['Del fondo solo se puede subir. Tenés el ascensor para vos solo.', 'Los dinosaurios también empezaron siendo un bichito. Vos repasás hoy.', 'Hoy fue un día de esos. Mañana, con un repaso, es otro.', 'Como cuando la abuela pregunta si comiste y decís que sí pero no. Así fue este examen.', '¡Qué nivel! ¡Qué capacidad! ¡Qué… bueno, no me sale seguir.'] },
   { min: 2, chars: [
     ['Plancton', 'Sos un Plancton', '🦐', ['Vino la ballena a tomarte lección y te hiciste el desmayado.', 'Chiquitito, pero ya largás burbujitas de conocimiento.'], 'bubble'],
@@ -905,6 +909,10 @@ const LEVELS = [
     ['Mosca de verano', 'Sos una Mosca de verano', '🪰', ['Veinte choques contra el vidrio hasta ver la puerta abierta. Ya casi.', 'Lástima que no ves las preguntas en cámara lenta como las moscas.'], 'buzz'],
     ['Garrapata con sueño', 'Sos una Garrapata con sueño', '🕷️', ['Te subiste al perro para ir al colegio y te despertaste en la veterinaria.', 'Agarrate al tema como garrapata y no lo largues.'], 'scuttle'],
     ['Polilla del ropero', 'Sos una Polilla del ropero', '🦋', ['Te preguntaron de moda y contestaste que la lana es rica.', 'Siempre vas hacia la luz. Hoy la luz es el repaso.'], 'flutter'],
+    ['Hormiga sin fila', 'Sos una Hormiga sin fila', '🐜', ['Todas fueron para un lado y vos para el otro.', 'Te perdiste la fila, pero no la voluntad.'], 'scuttle'],
+    ['Cangrejo al revés', 'Sos un Cangrejo al revés', '🦀', ['Caminás de costado y encima para atrás.', 'Pinzas tenés. Falta agarrar la respuesta.'], 'scuttle'],
+    ['Pez dorado distraído', 'Sos un Pez dorado distraído', '🐠', ['Tres segundos de memoria. Y se nota.', 'Diste veinte vueltas a la pecera y cada vuelta era nueva.'], 'bloop'],
+    ['Rana sin salto', 'Sos una Rana sin salto', '🐸', ['Te preparaste para saltar y te quedaste sentada.', 'Croás bien, falta el salto.'], 'croak'],
   ], jokes: ['Subiste un escalón de la evolución. Falta la escalera entera.', 'Los gigantes también fueron chiquitos alguna vez.', 'Algo quedó en la cabeza. Ahora lo regamos.', 'Le ganaste a una piedra. Por poquito. La piedra pidió revancha.', 'Estuviste tan cerca de la respuesta como yo de ganar el Quini.'] },
   { min: 3, chars: [
     ['Larvoide', 'Sos un Larvoide', '🐛', ['"Algún día voy a ser mariposa", dijiste. El espejo contestó: "Primero estudiá".', 'Comé tema todo el día como larva y te salen las alas.'], 'squish'],
@@ -915,6 +923,10 @@ const LEVELS = [
     ['Grillo desafinado', 'Sos un Grillo desafinado', '🦗', ['Cantaste la lección toda la noche y te tiraron una zapatilla. Era la respuesta equivocada.', 'Frotá un poco más las neuronas y te sale la melodía.'], 'cricket'],
     ['Cascarudo panza arriba', 'Sos un Cascarudo panza arriba', '🪲', ['Panza arriba, moviendo las patitas: "Qué lindo se ve el cielo". Dale, date vuelta.', 'Todo cascarudo termina dándose vuelta. Vos también.'], 'thud'],
     ['Ciempiés con calambre', 'Sos un Ciempiés con calambre', '🐛', ['Se te acalambraron las cien patas y llegaste saltando en una. ¡Pero llegaste!', 'Te pusiste a pensar cómo caminar y te caíste. Menos pensar, más repasar.'], 'scuttle'],
+    ['Erizo despeinado', 'Sos un Erizo despeinado', '🦔', ['Mucha púa y poca respuesta.', 'Te hiciste bolita con la pregunta. Desenrollate.'], 'squish'],
+    ['Zorrino tímido', 'Sos un Zorrino tímido', '🦨', ['Ni el olor te salió bien hoy.', 'Tranqui, que nadie se acerca a burlarse.'], 'squish'],
+    ['Gallina pensativa', 'Sos una Gallina pensativa', '🐔', ['Pusiste un huevo de respuesta. Medio crudo.', 'Picoteaste por todos lados y algo encontraste.'], 'chirp'],
+    ['Topo con anteojos', 'Sos un Topo con anteojos', '🐀', ['Cavaste bien, pero salió en cualquier lado.', 'Los anteojos ayudan. Falta abrir los ojos.'], 'thud'],
   ], jokes: ['Todavía no sos mariposa, pero el capullo está en obra.', 'Ya tenés los bordes del rompecabezas. Falta el medio.', 'La tortuga le ganó a la liebre, acordate.', 'Contestaste con una seguridad bárbara. Lástima que era otra cosa.', 'Me gustó el esfuerzo. Lo demás, lo repasamos.'] },
   { min: 4, chars: [
     ['Araña de rincón', 'Sos una Araña de rincón', '🕷️', ['Tejiste la telaraña y cayó una mosca, un papelito y polvo. La respuesta no.', 'Salí del rincón, que el tema no muerde.'], 'scuttle'],
@@ -925,6 +937,10 @@ const LEVELS = [
     ['Paloma de plaza', 'Sos una Paloma de plaza', '🐦', ['Escuchaste toda la clase y solo te acordás de dónde había migas.', 'Las palomas siempre vuelven. Vos volvé al tema.'], 'coo'],
     ['Sapo de charco', 'Sos un Sapo de charco', '🐸', ['Creías saber todo del mar hasta que llovió y el charco creció.', 'Saltaste por la mosca y agarraste una hoja. Afiná la puntería.'], 'croak'],
     ['Lagartija apurada', 'Sos una Lagartija apurada', '🦎', ['Contestaste tan rápido que se te cayó la cola. La cola contestaba mejor.', 'Tomá un poco de sol y volvé con todo.'], 'swoosh'],
+    ['Comadreja curiosa', 'Sos una Comadreja curiosa', '🦡', ['Metés la nariz en todo, falta meterla en el libro.', 'Curiosidad tenés de sobra. Ya casi.'], 'squeak'],
+    ['Ganso enojado', 'Sos un Ganso enojado', '🪿', ['Le gritaste al examen. No funcionó.', 'Mucha actitud. Ahora sumale respuestas.'], 'honk'],
+    ['Gorrión de vereda', 'Sos un Gorrión de vereda', '🐦', ['Juntaste miguitas de respuestas. Algo comiste.', 'Chiquito y rápido. Falta un poquito de vuelo.'], 'chirp'],
+    ['Cabra trepadora', 'Sos una Cabra trepadora', '🐐', ['Subiste media montaña. La otra mitad, mañana.', 'Te agarrás de cualquier piedrita. Seguí subiendo.'], 'heehaw'],
   ], jokes: ['Casi la mitad: el vaso está medio lleno y el profe trajo la jarra.', 'Estás en la puerta del aprobado. Tocá el timbre con un repaso.', 'Tenés todos los ingredientes. Falta cocinar.', 'Fuiste por medialunas y volviste con las migas. Algo trajiste.', 'El examen se rió un poquito. La próxima te reís último vos.'] },
   { min: 5, chars: [
     ['Cuadrúpedo', 'Sos un Cuadrúpedo', '🐕', ['Viste a un humano en dos patas, dijiste "qué fácil" y te caíste de cola.', 'En cuatro patas se está firme, pero parado se ve más lejos.'], 'bark'],
@@ -935,6 +951,10 @@ const LEVELS = [
     ['Pato desorientado', 'Sos un Pato desorientado', '🦆', ['Volaste al sur y llegaste al norte. Pero aprendiste geografía.', 'Nadás, caminás y volás, pero nada del todo bien. Ahora a profundizar.'], 'quack'],
     ['Vaca pensativa', 'Sos una Vaca pensativa', '🐄', ['Toda la tarde pensando y al final dijiste: "Muuu". Se notó el esfuerzo.', 'Rumiá el tema dos veces, como la vaca, y te queda grabado.'], 'moo'],
     ['Burro con ganas', 'Sos un Burro con ganas', '🫏', ['"No sé mucho, pero tengo ganas". Con ganas se aprende todo.', 'Dicen que el burro es terco. Con el estudio, eso es virtud.'], 'heehaw'],
+    ['Oveja con dudas', 'Sos una Oveja con dudas', '🐑', ['Seguiste al rebaño… hasta la mitad del camino.', '¿Bee o no bee? Esa es la cuestión.'], 'moo'],
+    ['Chancho filósofo', 'Sos un Chancho filósofo', '🐖', ['Pensaste mucho y contestaste la mitad.', 'Hay barro en las ideas, pero ya se aclaran.'], 'moo'],
+    ['Llama de la Puna', 'Sos una Llama de la Puna', '🦙', ['Escupiste la respuesta. Casi aciertas.', 'Subiste alto, falta un poquito de aire.'], 'neigh'],
+    ['Canguro novato', 'Sos un Canguro novato', '🦘', ['Saltaste bien, pero en la dirección equivocada.', 'Tenés bolsillo: guardá ahí el repaso.'], 'boing'],
   ], jokes: ['Llegaste a la parada justo cuando arranca el colectivo. ¡Corré que lo alcanzás!', 'Raspando, pero en camino. Otro intento y sale.', 'Medio examen en el bolsillo. Vamos por la otra mitad.', 'Cinco: el número más tibio del universo. Como el mate que te olvidaste.', 'Así de cerca, como el colectivo que te cierra la puerta en la cara.'] },
   { min: 6, chars: [
     ['Cachalote bípedo', 'Sos un Cachalote bípedo', '🐋', ['Saliste del mar caminando en dos patas y dijiste: "Vine a aprobar". Y aprobaste.', 'El cerebro más grande del planeta, y ahora sabemos para qué: para aprobar.'], 'whale'],
@@ -945,6 +965,10 @@ const LEVELS = [
     ['Loro bilingüe', 'Sos un Loro bilingüe', '🦜', ['Ya repetís las respuestas correctas en dos idiomas.', 'Dicen que el loro solo repite. Vos no repetiste: entendiste.'], 'chirp'],
     ['Oso hormiguero detective', 'Sos un Oso hormiguero detective', '🔎', ['Metiste la nariz en cada pista y resolviste el caso.', 'Metés la nariz donde nadie se anima. Por eso descubrís cosas.'], 'purr'],
     ['Tortuga maratonista', 'Sos una Tortuga maratonista', '🐢', ['Todos se rieron cuando te anotaste en la maratón. Las liebres todavía buscan el camino.', 'Vivís cien años porque no te estresás. Aprobaste con calma.'], 'tada'],
+    ['Hornero arquitecto', 'Sos un Hornero arquitecto', '🐦', ['Armaste tu casita de barro, ¡y aprobaste!', 'Constructor nacional. Ladrillo por ladrillo.'], 'chirp'],
+    ['Ballena cantora', 'Sos una Ballena cantora', '🐳', ['Cantaste la respuesta y se escuchó en todo el océano.', 'Gigante y afinada. ¡Aprobado!'], 'whale'],
+    ['Pato de carrera', 'Sos un Pato de carrera', '🦆', ['Nadaste, caminaste y volaste… directo al aprobado.', 'El pato más rápido de la laguna.'], 'quack'],
+    ['Zorro astuto', 'Sos un Zorro astuto', '🦊', ['Encontraste la respuesta antes que nadie.', 'Astuto y simpático. Buena combinación.'], 'squeak'],
   ], jokes: ['¡Aprobaste! Ya sos del club de los que saben. Hay medialunas.', 'Lo sacaste adelante. Clap, clap, clap.', 'Le estás agarrando la mano. Vamos por más.', 'Raspando, pero adentro. Gol de rebote en el minuto noventa: vale igual.', 'Ya estás del lado de los que aprueban. No te agrandes. Bueno, un poquito.'] },
   { min: 7, chars: [
     ['Presidente de país del tercer mundo', 'Sos un Presidente de país del tercer mundo', '🎩', ['Prometiste saber el tema y, a diferencia de otros presidentes, cumpliste.', 'Ya tenés la banda presidencial. Ahora no te endeudes con el FMI.'], 'fanfare'],
@@ -955,6 +979,10 @@ const LEVELS = [
     ['León con corona', 'Sos un León con corona', '🦁', ['Te pusiste la corona, rugiste, y las respuestas se acomodaron solas.', 'Dormís veinte horas y las otras cuatro sacás buenas notas.'], 'roar'],
     ['Jirafa ingeniera', 'Sos una Jirafa ingeniera', '🦒', ['Hiciste un puente con el cuello para que todos crucen el río. Inteligente y solidaria.', 'Ya ves el tema desde arriba, sin esfuerzo.'], 'ding'],
     ['Abeja reina', 'Sos una Abeja reina', '🐝', ['Votaron en la colmena quién sabía más. Ganaste vos.', 'Hiciste un examen dulce como la miel.'], 'buzz'],
+    ['Yaguareté guardián', 'Sos un Yaguareté guardián', '🐆', ['Cuidaste el tema como tu selva.', 'Fuerte, ágil y bien argentino.'], 'roar'],
+    ['DJ del conocimiento', 'Sos un DJ del conocimiento', '🎧', ['Mezclaste las ideas y la pista quedó bárbara.', 'Subile el volumen a ese siete.'], 'laser'],
+    ['Búho bibliotecario', 'Sos un Búho bibliotecario', '🦉', ['Te sabés dónde está cada libro. Y lo que dice.', 'Shh… estamos aprobando.'], 'hoot'],
+    ['Capitán de selección', 'Sos un Capitán de selección', '⚽', ['Llevás la cinta y el equipo te sigue.', 'Gol de cabeza en el examen.'], 'fanfare'],
   ], jokes: ['Ya jugás en primera. Falta poquito para la Selección.', 'Si esto fuera una carrera, ya estás en el podio.', 'El profe está tan contento que ya piensa en el próximo tema.', '¡Pará, pará! ¿Me estás cargando? Ese siete vale un asado.', 'Ya sabés más que mi cuñado, que opina de todo.'] },
   { min: 8, chars: [
     ['Homo erectus', 'Sos un Homo erectus', '🦍', ['Te paraste derechito, miraste alrededor y dijiste: "Uy, ahora entiendo todo".', 'La evolución tardó millones de años en pararse. Vos, un examen.'], 'drum'],
@@ -965,6 +993,10 @@ const LEVELS = [
     ['Elefante con memoria de oro', 'Sos un Elefante con memoria de oro', '🐘', ['Te acordaste de todo. Hasta del chiste del módulo anterior.', 'Hoy tu conocimiento fue tamaño elefante.'], 'trumpet'],
     ['Detective de lupa', 'Sos un Detective de lupa', '🕵️', ['Lupa en mano, encontraste cada pista. "Elemental". Caso cerrado.', 'No se te escapó casi nada. Así trabaja un detective.'], 'ding'],
     ['Puma inventor', 'Sos un Puma inventor', '🐆', ['Inventaste una máquina de aprobar exámenes. Funciona bárbaro, se ve.', 'Rápido, ágil y sin hacer ruido. Así respondiste.'], 'roar'],
+    ['Inventora de cohetes', 'Sos una Inventora de cohetes', '🚀', ['Tus respuestas despegan solas.', 'Cuenta regresiva y… ¡ocho!'], 'rocket'],
+    ['Pulpo genio', 'Sos un Pulpo genio', '🐙', ['Ocho brazos, ocho puntos. Casualidad no es.', 'Abriste el frasco del tema en dos segundos.'], 'bloop'],
+    ['Pianista virtuoso', 'Sos un Pianista virtuoso', '🎹', ['Tocaste cada respuesta sin errar una nota.', 'Aplausos de pie para el concierto.'], 'guitar'],
+    ['Orca estratega', 'Sos una Orca estratega', '🐋', ['Planeaste cada respuesta como una jugada.', 'La reina del océano, y del examen.'], 'whale'],
   ], jokes: ['Ya podrías explicarle el tema a otro. Y te entenderían.', 'El profe le contó a todos los otros profes.', 'Te falta muy poquito para la cima.', 'Me estás haciendo quedar mal a mí, que soy el profe.', 'Si esto fuera fútbol, ya te llaman de Europa.'] },
   { min: 9, chars: [
     ['Ninja supremo', 'Sos un Ninja supremo', '🥷', ['Entraste sin ruido, respondiste todo y el profe ni se dio cuenta de que terminaste.', 'Cinturón negro en este tema.'], 'swoosh'],
@@ -975,6 +1007,10 @@ const LEVELS = [
     ['Robot del futuro', 'Sos un Robot del futuro', '🤖', ['Vino un robot del año 3000, te escaneó y dijo: "Error. Este humano sabe más que yo".', 'Nivel de conocimiento: altísimo. Recomendación: seguí así.'], 'robot'],
     ['Águila imperial', 'Sos un Águila imperial', '🦅', ['Viste la respuesta desde tres kilómetros y bajaste en picada a agarrarla.', 'La mejor vista del cielo y del tema.'], 'eagle'],
     ['Fénix renacido', 'Sos un Fénix renacido', '🔥', ['Quemaste el tema de tanto estudiarlo y renaciste sabio.', 'Tus respuestas curan cualquier duda.'], 'magic'],
+    ['Mago supremo', 'Sos un Mago supremo', '🪄', ['Agitaste la varita y apareció un nueve.', 'Ni el mago del barrio te alcanza.'], 'magic'],
+    ['Guepardo relámpago', 'Sos un Guepardo relámpago', '🐆', ['Respondiste tan rápido que el examen quedó atrás.', 'El más veloz de la sabana del saber.'], 'swoosh'],
+    ['Astronauta comandante', 'Sos un Astronauta comandante', '👩‍🚀', ['Pilotaste la nave sin un solo error.', 'Misión cumplida, comandante.'], 'rocket'],
+    ['Maestro del ajedrez', 'Sos un Maestro del ajedrez', '♟️', ['Jaque mate al examen en pocas jugadas.', 'Pensaste diez movidas adelante.'], 'ding'],
   ], jokes: ['Casi perfecto. El examen te quiere pedir un autógrafo.', 'Nivel maestro. Pocos llegan hasta acá.', 'Si seguís así, el profe te va a pedir clases a vos.', '¿Querés que te aplauda de pie? Ya estoy de pie.', 'No tengo nada para corregirte, y a un profe eso le duele.'] },
   { min: 9.7, chars: [
     ['Dios', 'Sos un Dios', '⚡', ['El examen te vio y te pidió disculpas por molestarte.', 'Ya no estudiás el tema: el tema te estudia a vos. Y saca un dos.'], 'thunder'],
@@ -985,6 +1021,10 @@ const LEVELS = [
     ['Sol en persona', 'Sos el Sol en persona', '☀️', ['Brillaste tanto que el profe se tuvo que poner anteojos de sol.', 'Este examen tuvo luz propia: la tuya.'], 'choir'],
     ['Cerebro cósmico', 'Sos un Cerebro cósmico', '🧠', ['Quisieron medir tu cerebro y se rompió la máquina.', 'Tus neuronas hicieron una fiesta y todas sacaron diez.'], 'laser'],
     ['Titán del Olimpo', 'Sos un Titán del Olimpo', '🏛️', ['Los dioses del Olimpo te vieron y te hicieron lugar en la mesa.', 'Sostenés todo el tema sin despeinarte.'], 'thunder'],
+    ['Galaxia andante', 'Sos una Galaxia andante', '🌠', ['Tenés millones de estrellas en la cabeza.', 'El universo te pidió una foto.'], 'choir'],
+    ['Fuerza de la naturaleza', 'Sos una Fuerza de la naturaleza', '🌪️', ['Pasaste por el examen como un huracán.', 'Nadie te puede parar.'], 'thunder'],
+    ['Profesor del profesor', 'Sos el Profesor del profesor', '🎓', ['Ahora el profe toma clases con vos.', 'Te ganaste la tiza dorada.'], 'tada'],
+    ['Dragón dorado', 'Sos un Dragón dorado', '🐲', ['Brillás tanto que encandilás.', 'Leyenda dorada del conocimiento.'], 'roar'],
   ], jokes: ['No hay nada más que enseñarte. El profe se va de vacaciones.', 'Desbloqueaste el final secreto del juego.', 'Te reservamos el aula y la tiza.', 'Me rindo. Te doy la tiza, el pizarrón y el sueldo. Bueno, el sueldo no.', 'Este examen lo cuelgo en el living, al lado de la foto de la abuela.'] },
 ];
 const levelFor = (n) => [...LEVELS].reverse().find((l) => n >= l.min) || LEVELS[0];
