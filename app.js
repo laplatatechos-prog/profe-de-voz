@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 37;
+const APP_VERSION = 38;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -791,13 +791,13 @@ const Q_RULE = 'REGLA DE ORO DE LAS PREGUNTAS: la pregunta NUNCA puede contener,
 function learnSystem(s, st, m) {
   return teacher() + `
 Estás enseñando "${s.topic}". Etapa: "${st.title}". Módulo: "${m.title}". ${diffOf(s).teach}
-Enseñás este módulo en ${STEPS} pasos, como una charla. En cada paso explicás UNA sola idea en 1 o 2 frases muy cortas (máximo 30 palabras en total) y enseguida hacés UNA pregunta sobre esa idea que haga pensar (no obvia). La pregunta no puede responderse copiando palabras de tu explicación: pedí aplicarla, dar un ejemplo o explicar el porqué con sus palabras. ${Q_RULE}
+Enseñás este módulo en ${STEPS} pasos, como una charla. En cada paso explicás UNA sola idea en 1 o 2 frases cortas y SIEMPRE le sumás un EJEMPLO concreto de la vida cotidiana argentina que la haga fácil de entender ("Por ejemplo: …" o "Es como cuando…"), todo en un máximo de 50 palabras, y enseguida hacés UNA pregunta sobre esa idea que haga pensar (no obvia). La pregunta no puede responderse copiando palabras de tu explicación: pedí aplicarla, dar un ejemplo o explicar el porqué con sus palabras. ${Q_RULE}
 Siempre respondés SOLO con JSON válido, sin texto extra:
-- Si el mensaje es "EMPEZAR": {"explain":"idea 1","question":"pregunta 1"}
-- Si el alumno responde la pregunta: {"kind":"answer","correct":1-10,"clarity":1-10,"feedback":"una o dos frases cortas, claras y cálidas, SIN chistes ni ironía (la app ya hizo el chiste): si estuvo bien o qué faltó","explain":"siguiente idea (vacío si ya fue el último paso)","question":"siguiente pregunta (vacío si ya fue el último paso)"}
+- Si el mensaje es "EMPEZAR": {"explain":"idea 1 + ejemplo cotidiano","question":"pregunta 1"}
+- Si el alumno responde la pregunta: {"kind":"answer","correct":1-10,"clarity":1-10,"feedback":"una o dos frases cortas, claras y cálidas, SIN chistes ni ironía (la app ya hizo el chiste): si estuvo bien o qué faltó; si estuvo mal o incompleta, decí la respuesta correcta con un ejemplo corto","explain":"siguiente idea + ejemplo cotidiano (vacío si ya fue el último paso)","question":"siguiente pregunta (vacío si ya fue el último paso)"}
   Cuando el alumno responde, el feedback, la siguiente idea y la pregunta van SIN chistes, ironías ni bromas: claros y directos.
   "correct" = qué tan correcta es la respuesta. "clarity" = qué tan clara y precisa la explicó.
-- Si el alumno NO responde sino que pregunta algo o pide más detalle: {"kind":"doubt","reply":"respondé su duda, acá sí podés extenderte un poco (máximo 70 palabras)","question":"repetí la pregunta pendiente"}`;
+- Si el alumno NO responde sino que pregunta algo o pide más detalle: {"kind":"doubt","reply":"respondé su duda con un ejemplo concreto y cotidiano, acá sí podés extenderte un poco (máximo 80 palabras)","question":"repetí la pregunta pendiente"}`;
 }
 views.module = () => {
   const s = getSubj(); const st = s.stages[view.si]; const m = st.modules[view.mi];
