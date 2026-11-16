@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 34;
+const APP_VERSION = 35;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -760,11 +760,12 @@ async function ensureModules(s, i) {
 // El profe explica una idea en 1 o 2 frases y enseguida pregunta. Corrige, explica la siguiente idea y vuelve a preguntar.
 // Son 2 pasos por módulo; si el alumno pide más detalle, recién ahí se extiende. Al final: puntaje, nivel y chiste.
 const STEPS = 2;
+const Q_HARD = 'DIFICULTAD: exigente. Las preguntas tienen que pedir detalles concretos (causas, pasos en orden, diferencias entre dos cosas, datos, consecuencias, un ejemplo real explicado) y no se pueden contestar con una sola palabra ni con algo obvio.';
 const Q_RULE = 'REGLA DE ORO DE LAS PREGUNTAS: la pregunta NUNCA puede contener, insinuar ni dejar adivinar la respuesta. No repitas en la pregunta las palabras clave de la respuesta, no hagas preguntas de sí/no ni de opción múltiple, no pongas la respuesta entre paréntesis o como ejemplo. Preguntá por el porqué, el cómo, para qué sirve, qué pasaría si…, o pedí un ejemplo propio, de modo que haya que pensar o recordar.';
 function learnSystem(s, st, m) {
   return teacher() + `
 Estás enseñando "${s.topic}". Etapa: "${st.title}". Módulo: "${m.title}".
-Enseñás este módulo en ${STEPS} pasos, como una charla. En cada paso explicás UNA sola idea en 1 o 2 frases muy cortas (máximo 30 palabras en total) y enseguida hacés UNA pregunta corta sobre esa idea. La pregunta no puede responderse copiando palabras de tu explicación: pedí aplicarla, dar un ejemplo o explicar el porqué con sus palabras. ${Q_RULE}
+Enseñás este módulo en ${STEPS} pasos, como una charla. En cada paso explicás UNA sola idea en 1 o 2 frases muy cortas (máximo 30 palabras en total) y enseguida hacés UNA pregunta sobre esa idea que haga pensar (no obvia). La pregunta no puede responderse copiando palabras de tu explicación: pedí aplicarla, dar un ejemplo o explicar el porqué con sus palabras. ${Q_RULE}
 Siempre respondés SOLO con JSON válido, sin texto extra:
 - Si el mensaje es "EMPEZAR": {"explain":"idea 1","question":"pregunta 1"}
 - Si el alumno responde la pregunta: {"kind":"answer","correct":1-10,"clarity":1-10,"feedback":"una o dos frases cortas, claras y cálidas, SIN chistes ni ironía (la app ya hizo el chiste): si estuvo bien o qué faltó","explain":"siguiente idea (vacío si ya fue el último paso)","question":"siguiente pregunta (vacío si ya fue el último paso)"}
@@ -880,7 +881,7 @@ async function startModuleExam(s, si, mi, btn) {
   btn.disabled = true; btn.textContent = 'Preparando examen…';
   try {
     const j = await askJSON(teacher(), `Tema: ${s.topic}. El alumno acaba de leer este módulo, "${m.title}":\n${m.content}\n` +
-      'Armá 2 preguntas abiertas y cortas sobre ESTE contenido, que se respondan en 1 o 2 frases. ' + Q_RULE + ' Forma: {"questions":["...","..."]}', 600);
+      'Armá 2 preguntas abiertas sobre ESTE contenido, que se respondan en 2 o 3 frases con detalles. ' + Q_HARD + ' ' + Q_RULE + ' Forma: {"questions":["...","..."]}', 600);
     go('exam', { sid: s.id, si, mi, type: 'modulo', questions: j.questions.slice(0, 2), answers: [], idx: 0 }, false);
   } catch (e) { btn.disabled = false; btn.textContent = 'Listo, tomame examen →'; alertBox(e.message); }
 }
@@ -907,10 +908,10 @@ async function startExam(s, si, type, btn) {
     ? s.stages.slice(0, Math.max(si, s.current) + 1).map((x) => `${x.title}: ${(x.modules || []).map((m) => m.title).join(', ')}`).join(' | ')
     : `${st.title}: ${(st.modules || []).map((m) => m.title).join(', ')}`;
   const kind = type === 'practico' ? 'situaciones prácticas de la vida real donde haya que aplicar lo aprendido (cada una de 2 o 3 frases, terminando en una pregunta)'
-    : 'preguntas abiertas y concretas que se respondan en 1 a 4 frases';
+    : 'preguntas abiertas, difíciles y detalladas que se respondan en 2 a 4 frases';
   try {
     const j = await askJSON(teacher(), `Tema: ${s.topic}. Contenido a evaluar: ${scope}.
-Armá ${cfg.n} ${kind}, variadas, de dificultad progresiva. ${Q_RULE}${type === 'final' ? ' Es el EXAMEN FINAL: repartí las preguntas entre TODAS las etapas, y que al menos una pida relacionar ideas de etapas distintas.' : ''} Forma: {"questions":["...","..."]}`, 1200);
+Armá ${cfg.n} ${kind}, variadas, de dificultad progresiva (de media a difícil). ${Q_HARD} ${Q_RULE}${type === 'final' ? ' Es el EXAMEN FINAL: repartí las preguntas entre TODAS las etapas, y que al menos una pida relacionar ideas de etapas distintas.' : ''} Forma: {"questions":["...","..."]}`, 1200);
     go('exam', { sid: s.id, si, type, questions: j.questions.slice(0, cfg.n), answers: [], idx: 0 });
   } catch (e) { btn.disabled = false; btn.querySelector('span').textContent = cfg.desc; alertBox(e.message); }
 }
@@ -955,6 +956,7 @@ views.exam = () => {
     try {
       const g = await askJSON(teacher() + ' Corregís exámenes con justicia y de forma alentadora, marcando qué faltó o qué estuvo mal.',
         `Tema: ${s.topic}. Pregunta: ${q}\nRespuesta del alumno: ${answer}\n` +
+        'Corregí con exigencia: una respuesta correcta pero vaga o sin detalles no pasa de 6; 9 o 10 solo si es correcta, completa y con detalles precisos. ' +
         'Poné dos notas enteras del 1 al 10: "correct" (qué tan correcta y completa es) y "clarity" (qué tan clara, ordenada y precisa es la explicación; si es correcta pero confusa, baja esta nota). ' +
         'Forma: {"correct":0,"clarity":0,"feedback":"2 a 4 frases: qué estuvo bien, qué faltó o estuvo mal, y cómo decirlo más claro","ideal":"una respuesta modelo breve"}', 800, FAST_MODEL);
       view.answers[i] = { answer, correct: clamp(g.correct), clarity: clamp(g.clarity), feedback: g.feedback, ideal: g.ideal };
