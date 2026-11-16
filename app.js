@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 14;
+const APP_VERSION = 15;
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
 const tint = (i) => PALETTE[i % PALETTE.length];
 const PASS = 6; // nota mínima para aprobar el examen de etapa
@@ -625,20 +625,20 @@ views.exam = () => {
 };
 // Niveles chistosos (de menor a mayor). "min" = nota mínima para llegar a ese nivel.
 const LEVELS = [
-  { min: 0, name: 'Nivel Musgo', emoji: '🌿', jokes: ['Estás verde y quietito, pegado a la piedra. ¡A moverse!', 'El musgo crece despacito… pero crece. ¡Vos también!'] },
-  { min: 2, name: 'Nivel Plancton', emoji: '🦠', jokes: ['Sos chiquitito, pero las ballenas comen de vos. ¡Algo es algo!', 'Flotás en el océano del conocimiento sin rumbo. ¡Nadá un poquito!'] },
-  { min: 3, name: 'Nivel Larvoide', emoji: '🐛', jokes: ['Todavía sos larva, pero ojo que de acá sale mariposa.', 'Te arrastrás, pero vas para adelante. ¡Un repaso y te salen alas!'] },
-  { min: 4, name: 'Nivel Araña de rincón', emoji: '🕷️', jokes: ['Escondida en el rincón, sin hacer ruido… ¡salí a la luz!', 'Ya tejiste algo de telaraña, falta que se pegue el conocimiento.'] },
-  { min: 5, name: 'Nivel Cuadrúpedo', emoji: '🐕', jokes: ['Caminás en cuatro patas, pero ya caminás. ¡Falta pararse!', 'Firme en cuatro patas. Un empujoncito y te ponés en dos.'] },
-  { min: 6, name: 'Nivel Cachalote bípedo', emoji: '🐋', jokes: ['Un cachalote caminando en dos patas: raro, pero aprobaste.', 'Sos enorme y raro, pero avanzás. ¡Así se hace!'] },
-  { min: 7, name: 'Nivel Presidente de país del tercer mundo', emoji: '🎩', jokes: ['Prometés mucho y cumplís bastante. ¡Más que muchos presidentes!', 'Ya tenés banda presidencial. Ahora no te endeudes con el FMI.'] },
-  { min: 8, name: 'Nivel Homo erectus', emoji: '🦍', jokes: ['Ya caminás derechito y descubriste el fuego. ¡Bien ahí!', 'Postura erguida y mente despierta. La evolución te sonríe.'] },
-  { min: 9, name: 'Nivel Ninja supremo', emoji: '🥷', jokes: ['Respondiste tan rápido y preciso que nadie te vio venir.', 'Cinturón negro en este tema. El examen ni se dio cuenta.'] },
-  { min: 9.7, name: 'Nivel Dios', emoji: '⚡', jokes: ['Nivel Dios: el examen te pidió disculpas por molestarte.', 'Ya no estudiás el tema: el tema te estudia a vos.'] },
+  { min: 0, name: 'Nivel Musgo', sos: 'Sos un Musgo', emoji: '🌿', jokes: ['Estás verde y quietito, pegado a la piedra. ¡A moverse!', 'El musgo crece despacito… pero crece. ¡Vos también!'] },
+  { min: 2, name: 'Nivel Plancton', sos: 'Sos un Plancton', emoji: '🦠', jokes: ['Sos chiquitito, pero las ballenas comen de vos. ¡Algo es algo!', 'Flotás en el océano del conocimiento sin rumbo. ¡Nadá un poquito!'] },
+  { min: 3, name: 'Nivel Larvoide', sos: 'Sos un Larvoide', emoji: '🐛', jokes: ['Todavía sos larva, pero ojo que de acá sale mariposa.', 'Te arrastrás, pero vas para adelante. ¡Un repaso y te salen alas!'] },
+  { min: 4, name: 'Nivel Araña de rincón', sos: 'Sos una Araña de rincón', emoji: '🕷️', jokes: ['Escondida en el rincón, sin hacer ruido… ¡salí a la luz!', 'Ya tejiste algo de telaraña, falta que se pegue el conocimiento.'] },
+  { min: 5, name: 'Nivel Cuadrúpedo', sos: 'Sos un Cuadrúpedo', emoji: '🐕', jokes: ['Caminás en cuatro patas, pero ya caminás. ¡Falta pararse!', 'Firme en cuatro patas. Un empujoncito y te ponés en dos.'] },
+  { min: 6, name: 'Nivel Cachalote bípedo', sos: 'Sos un Cachalote bípedo', emoji: '🐋', jokes: ['Un cachalote caminando en dos patas: raro, pero aprobaste.', 'Sos enorme y raro, pero avanzás. ¡Así se hace!'] },
+  { min: 7, name: 'Nivel Presidente de país del tercer mundo', sos: 'Sos un Presidente de país del tercer mundo', emoji: '🎩', jokes: ['Prometés mucho y cumplís bastante. ¡Más que muchos presidentes!', 'Ya tenés banda presidencial. Ahora no te endeudes con el FMI.'] },
+  { min: 8, name: 'Nivel Homo erectus', sos: 'Sos un Homo erectus', emoji: '🦍', jokes: ['Ya caminás derechito y descubriste el fuego. ¡Bien ahí!', 'Postura erguida y mente despierta. La evolución te sonríe.'] },
+  { min: 9, name: 'Nivel Ninja supremo', sos: 'Sos un Ninja supremo', emoji: '🥷', jokes: ['Respondiste tan rápido y preciso que nadie te vio venir.', 'Cinturón negro en este tema. El examen ni se dio cuenta.'] },
+  { min: 9.7, name: 'Nivel Dios', sos: 'Sos un Dios', emoji: '⚡', jokes: ['Nivel Dios: el examen te pidió disculpas por molestarte.', 'Ya no estudiás el tema: el tema te estudia a vos.'] },
 ];
 const levelFor = (n) => [...LEVELS].reverse().find((l) => n >= l.min) || LEVELS[0];
 const jokeFor = (n) => { const j = levelFor(n).jokes; return j[Math.floor(Math.random() * j.length)]; };
-const levelOf = (n) => { const l = levelFor(n); return [n, l.name, l.emoji]; };
+const levelOf = (n) => { const l = levelFor(n); return [n, l.name, l.emoji, l.sos]; };
 const modBest = (m) => (m.scores && m.scores.length ? Math.max(...m.scores) : null);
 function stageScore(st) {
   const xs = (st.modules || []).map(modBest).filter((x) => x != null).concat(st.exams.map((e) => e.score));
@@ -684,9 +684,9 @@ views.result = () => {
       <div class="result-inner">
         <div class="result-topic">${isMod ? esc(m.title) : esc(cfg.name) + ' · ' + esc(st.title)}</div>
         <div class="result-emoji">${levelOf(view.score)[2]}</div>
-        <div class="result-label">Te sacaste</div>
+        <div class="result-label">Sacaste</div>
         <div class="result-num">${fmt(view.score)}</div>
-        <div class="result-level">Quedaste en ${levelOf(view.score)[1]}</div>
+        <div class="result-level">${levelOf(view.score)[3]}</div>
         <div class="result-joke">${esc(view.joke)}</div>
         ${view.feedback ? `<div class="result-joke" style="font-style:normal">${esc(view.feedback)}</div>` : ""}
         <div class="result-msg">${msg}</div>
@@ -700,7 +700,7 @@ views.result = () => {
           <button class="block result-btn ghost" id="again">Elegir otro examen</button>`}
       </div>
     </div>`;
-  speak(`Te sacaste ${fmt(view.score)}. Quedaste en ${levelOf(view.score)[1]}. ${view.joke} ${msg}`);
+  speak(`Sacaste ${fmt(view.score)}. ${levelOf(view.score)[3]}. ${view.joke} ${msg}`);
   if (ok) confetti();
   document.getElementById('toSubj').onclick = () => { stack.length = 0; view = { name: 'home' }; go('subject', { sid: s.id }); };
   const ag = document.getElementById('again'); if (ag) ag.onclick = () => go('examMenu', { sid: s.id, si: view.si }, false);
