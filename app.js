@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 31;
+const APP_VERSION = 32;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -268,14 +268,6 @@ const SOUNDS = {
   boing: (c, o, t) => { tone(c, o, t, .5, 150, 600, 'sine', .35, 14); return .55; },
   flutter: (c, o, t) => { for (let i = 0; i < 10; i++) noise(c, o, t + i * .06, .04, 2500, 1500, .2, 2); return .65; },
   cricket: (c, o, t) => { [0, .35].forEach((d) => { for (let i = 0; i < 4; i++) tone(c, o, t + d + i * .05, .035, 4200, 4200, 'sine', .12); }); return .6; },
-  squeak: (c, o, t) => { tone(c, o, t, .12, 2200, 2800, 'sine', .2); tone(c, o, t + .18, .15, 2400, 3000, 'sine', .2); return .4; },
-  coo: (c, o, t) => { tone(c, o, t, .35, 380, 300, 'sine', .3, 8); tone(c, o, t + .4, .45, 360, 280, 'sine', .3, 8); return .9; },
-  meow: (c, o, t) => { tone(c, o, t, .25, 500, 800, 'triangle', .3); tone(c, o, t + .25, .35, 800, 450, 'triangle', .3); return .65; },
-  quack: (c, o, t) => { [0, .3].forEach((d) => { tone(c, o, t + d, .18, 300, 220, 'sawtooth', .15); noise(c, o, t + d, .18, 1200, 800, .2, 3); }); return .55; },
-  moo: (c, o, t) => { tone(c, o, t, 1, 140, 110, 'sawtooth', .15, 3); return 1; },
-  heehaw: (c, o, t) => { [0, .45].forEach((d) => { tone(c, o, t + d, .2, 700, 500, 'sawtooth', .12); tone(c, o, t + d + .2, .25, 250, 200, 'sawtooth', .14); }); return .95; },
-  neigh: (c, o, t) => { tone(c, o, t, .9, 900, 500, 'sawtooth', .1, 18); return .95; },
-  chirp: (c, o, t) => { [0, .12, .24].forEach((d, i) => tone(c, o, t + d, .1, 2000 + i * 300, 3200, 'sine', .2)); return .4; },
   guitar: (c, o, t) => { [196, 247, 294, 392].forEach((f, i) => tone(c, o, t + i * .07, .9, f, f, 'triangle', .18)); return 1.1; },
   trumpet: (c, o, t) => { tone(c, o, t, .9, 300, 520, 'sawtooth', .14, 10); return .95; },
   laser: (c, o, t) => { [0, .2].forEach((d) => tone(c, o, t + d, .18, 1800, 200, 'square', .1)); return .45; },
@@ -284,31 +276,94 @@ const SOUNDS = {
   tick: (c, o, t) => { tone(c, o, t, .06, 1400, 1400, 'square', .12); return .08; },
   bubble: (c, o, t) => { [0, .15, .3, .45].forEach((d, i) => tone(c, o, t + d, .12, 300 + i * 120, 900 + i * 150, 'sine', .25)); return .6; },
   thud: (c, o, t) => { tone(c, o, t, .35, 110, 40, 'sine', .5); noise(c, o, t, .2, 200, 80, .3); tone(c, o, t + .45, .3, 90, 35, 'sine', .4); return .8; },
-  buzz: (c, o, t) => { tone(c, o, t, 1, 520, 640, 'sawtooth', .08, 28); return 1; },
   squish: (c, o, t) => { tone(c, o, t, .3, 180, 320, 'sine', .3, 12); tone(c, o, t + .3, .35, 320, 150, 'sine', .3, 12); return .7; },
-  croak: (c, o, t) => { [0, .3].forEach((d) => tone(c, o, t + d, .22, 140, 110, 'square', .12, 35)); return .6; },
   scuttle: (c, o, t) => { for (let i = 0; i < 14; i++) noise(c, o, t + i * .05, .03, 4000, 3000, .25, 3); return .75; },
-  bark: (c, o, t) => { [0, .28].forEach((d) => { tone(c, o, t + d, .15, 520, 260, 'sawtooth', .18); noise(c, o, t + d, .12, 900, 500, .2); }); return .5; },
-  monkey: (c, o, t) => { tone(c, o, t, .2, 400, 700, 'triangle', .3); tone(c, o, t + .22, .2, 400, 750, 'triangle', .3); tone(c, o, t + .45, .45, 900, 500, 'triangle', .3); return .9; },
   bloop: (c, o, t) => { tone(c, o, t, .25, 200, 800, 'sine', .35); tone(c, o, t + .3, .25, 250, 900, 'sine', .3); return .6; },
-  whale: (c, o, t) => { tone(c, o, t, .8, 180, 380, 'sine', .35, 4); tone(c, o, t + .7, .7, 380, 160, 'sine', .3, 4); return 1.4; },
-  dolphin: (c, o, t) => { [0, .12, .24, .36, .5].forEach((d, i) => tone(c, o, t + d, .1, 1800 + i * 200, 2600, 'sine', .15)); return .7; },
-  purr: (c, o, t) => { for (let i = 0; i < 3; i++) tone(c, o, t + i * .25, .2, 90, 70, 'triangle', .35, 25); return .8; },
-  honk: (c, o, t) => { tone(c, o, t, .2, 350, 330, 'square', .12); tone(c, o, t + .25, .35, 330, 300, 'square', .12); return .65; },
   fanfare: (c, o, t) => { [523, 659, 784].forEach((f, i) => tone(c, o, t + i * .14, .14, f, f, 'sawtooth', .12)); tone(c, o, t + .42, .6, 1047, 1047, 'sawtooth', .14, 5); return 1.05; },
-  eagle: (c, o, t) => { tone(c, o, t, .6, 2600, 1400, 'sawtooth', .07, 30); noise(c, o, t, .6, 3000, 1800, .15, 4); return .7; },
   horn: (c, o, t) => { tone(c, o, t, .9, 110, 105, 'sawtooth', .15); tone(c, o, t, .9, 165, 160, 'sawtooth', .1); return .95; },
   ding: (c, o, t) => { tone(c, o, t, 1, 1568, 1568, 'sine', .3); tone(c, o, t, .6, 3136, 3136, 'sine', .1); return 1; },
   drum: (c, o, t) => { [0, .2, .4, .55].forEach((d) => { tone(c, o, t + d, .18, 150, 60, 'sine', .5); noise(c, o, t + d, .06, 1200, 600, .15); }); return .8; },
-  hoot: (c, o, t) => { tone(c, o, t, .3, 420, 380, 'sine', .35, 6); tone(c, o, t + .4, .5, 420, 360, 'sine', .35, 6); return .95; },
   rocket: (c, o, t) => { noise(c, o, t, 1.2, 200, 3000, .35, .7); tone(c, o, t, 1.2, 100, 900, 'sawtooth', .06); return 1.2; },
   magic: (c, o, t) => { [1047, 1319, 1568, 2093, 2637].forEach((f, i) => tone(c, o, t + i * .08, .5, f, f, 'triangle', .14)); return .9; },
   swoosh: (c, o, t) => { noise(c, o, t, .35, 400, 5000, .45, 1.5); noise(c, o, t + .4, .25, 5000, 600, .35, 1.5); return .7; },
-  roar: (c, o, t) => { noise(c, o, t, 1, 300, 120, .5, .8); tone(c, o, t, 1, 90, 60, 'sawtooth', .2, 8); return 1; },
   hero: (c, o, t) => { [392, 523, 659].forEach((f, i) => tone(c, o, t + i * .12, .12, f, f, 'square', .1)); tone(c, o, t + .36, .7, 784, 784, 'square', .12, 6); return 1.1; },
   thunder: (c, o, t) => { noise(c, o, t, 1.3, 120, 60, .6, .5); [523, 659, 784, 1047].forEach((f) => tone(c, o, t + .5, 1, f, f, 'sine', .08, 5)); return 1.5; },
   choir: (c, o, t) => { [440, 554, 659, 880].forEach((f) => tone(c, o, t, 1.2, f, f, 'triangle', .07, 5)); return 1.2; },
 };
+// ---- Sonidos "reales": una voz animal = fuente (cuerdas vocales + aliento) que pasa por la "boca" (formantes) ----
+// f: curva de tono [[momento 0..1, Hz]], v: curva de boca [[momento, [F1,F2,F3]]].
+let noiseBuf = null;
+function noiseBuffer(c) {
+  if (noiseBuf && noiseBuf.sampleRate === c.sampleRate) return noiseBuf;
+  noiseBuf = c.createBuffer(1, c.sampleRate * 2, c.sampleRate); const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return noiseBuf;
+}
+function curve(param, pts, t, dur, k = 1) {
+  param.setValueAtTime(pts[0][1] * k, t);
+  for (let i = 1; i < pts.length; i++) param.linearRampToValueAtTime(pts[i][1] * k, t + pts[i][0] * dur);
+}
+function voice(c, out, t, dur, o) {
+  const k = 1 + (Math.random() - 0.5) * 0.08; // cada vez suena un poquito distinto, como un animal de verdad
+  const src = c.createGain();
+  const osc = c.createOscillator(); osc.type = o.type || 'sawtooth'; curve(osc.frequency, o.f, t, dur, k);
+  if (o.vib) { const l = c.createOscillator(), lg = c.createGain(); l.frequency.value = o.vib; lg.gain.value = o.f[0][1] * (o.vibD || 0.03); l.connect(lg).connect(osc.frequency); l.start(t); l.stop(t + dur + .05); }
+  const og = c.createGain(); og.gain.value = 1 - (o.breath || 0) * 0.5; osc.connect(og).connect(src);
+  if (o.breath) { const n = c.createBufferSource(); n.buffer = noiseBuffer(c); n.loop = true; const ng = c.createGain(); ng.gain.value = o.breath * 1.5; n.connect(ng).connect(src); n.start(t); n.stop(t + dur + .05); }
+  let mid = src;
+  if (o.am) { const a = c.createGain(), l = c.createOscillator(), lg = c.createGain(), d = o.amD || 0.8; a.gain.value = 1 - d / 2; lg.gain.value = d / 2; l.frequency.value = o.am; l.connect(lg).connect(a.gain); l.start(t); l.stop(t + dur + .05); src.connect(a); mid = a; }
+  const env = c.createGain(), atk = o.atk || 0.04, rel = Math.min(o.rel || 0.15, dur / 2), vol = o.vol || 0.5;
+  env.gain.setValueAtTime(0.0001, t); env.gain.exponentialRampToValueAtTime(vol, t + atk);
+  env.gain.setValueAtTime(vol, t + dur - rel); env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  [1, 0.55, 0.3].forEach((amp, i) => {
+    const bp = c.createBiquadFilter(), g = c.createGain(); bp.type = 'bandpass'; bp.Q.value = o.q || 9;
+    curve(bp.frequency, o.v.map(([m, F]) => [m, F[i]]), t, dur); g.gain.value = amp * 2.2;
+    mid.connect(bp).connect(g).connect(env);
+  });
+  env.connect(out); osc.start(t); osc.stop(t + dur + .05);
+}
+// ruido con volumen que late (ronroneo, rugido)
+function pulseNoise(c, out, t, dur, rate, lp, vol) {
+  const n = c.createBufferSource(); n.buffer = noiseBuffer(c); n.loop = true;
+  const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp;
+  const a = c.createGain(), l = c.createOscillator(), lg = c.createGain(); a.gain.value = 0.5; lg.gain.value = 0.5; l.frequency.value = rate; l.connect(lg).connect(a.gain);
+  const e = c.createGain(); e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(vol, t + .08); e.gain.setValueAtTime(vol, t + dur - .15); e.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  n.connect(f).connect(a).connect(e).connect(out); n.start(t); n.stop(t + dur + .05); l.start(t); l.stop(t + dur + .05);
+}
+// eco de ambiente: hace que los sonidos no suenen a juguete
+let reverbIR = null;
+function reverb(c) {
+  if (!reverbIR || reverbIR.sampleRate !== c.sampleRate) {
+    const len = Math.floor(c.sampleRate * 1.3); reverbIR = c.createBuffer(2, len, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = reverbIR.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3); }
+  }
+  const cv = c.createConvolver(); cv.buffer = reverbIR; return cv;
+}
+const A = { a: [750, 1200, 2600], e: [500, 1800, 2600], i: [320, 2300, 3000], o: [500, 850, 2500], u: [320, 750, 2300], m: [250, 900, 2200], n: [300, 1500, 2600] };
+const REAL = {
+  moo: (c, o, t) => { voice(c, o, t, 1.5, { f: [[0, 95], [.25, 125], [.75, 118], [1, 82]], v: [[0, A.m], [.2, A.u], [.55, A.o], [1, A.u]], vol: .6, breath: .12, vib: 5, vibD: .02, atk: .12, rel: .4 }); return 1.6; },
+  meow: (c, o, t) => { voice(c, o, t, .85, { f: [[0, 480], [.35, 720], [1, 430]], v: [[0, A.i], [.35, A.a], [.75, A.o], [1, A.u]], vol: .5, breath: .1, vib: 7, vibD: .02, atk: .06, rel: .25 }); return .95; },
+  bark: (c, o, t) => { [0, .32].forEach((d) => { voice(c, o, t + d, .2, { f: [[0, 420], [.3, 620], [1, 300]], v: [[0, A.a], [1, A.o]], vol: .8, breath: .35, atk: .01, rel: .1, q: 6 }); }); return .6; },
+  quack: (c, o, t) => { [0, .3, .55].forEach((d) => voice(c, o, t + d, .22, { f: [[0, 340], [1, 250]], v: [[0, [1000, 1700, 3000]], [1, [800, 1500, 2800]]], vol: .55, breath: .25, am: 45, amD: .6, q: 14, atk: .01, rel: .08 })); return .85; },
+  croak: (c, o, t) => { [0, .45].forEach((d) => voice(c, o, t + d, .35, { f: [[0, 130], [1, 105]], v: [[0, [450, 1300, 2400]]], vol: .7, am: 24, amD: 1, breath: .1, atk: .02, rel: .08 })); return .85; },
+  hoot: (c, o, t) => { [[0, .35], [.55, .2], [.82, .45]].forEach(([d, l]) => voice(c, o, t + d, l, { f: [[0, 360], [.2, 410], [1, 350]], v: [[0, A.u]], type: 'triangle', vol: .7, breath: .25, q: 5, atk: .05, rel: .12 })); return 1.3; },
+  coo: (c, o, t) => { voice(c, o, t, .3, { f: [[0, 280], [1, 340]], v: [[0, A.u]], type: 'triangle', vol: .6, am: 20, amD: .5, breath: .15 }); voice(c, o, t + .35, .6, { f: [[0, 330], [.3, 360], [1, 260]], v: [[0, A.u], [1, A.o]], type: 'triangle', vol: .6, breath: .15, vib: 6 }); return 1; },
+  neigh: (c, o, t) => { voice(c, o, t, 1.2, { f: [[0, 650], [.15, 1150], [.55, 950], [1, 380]], v: [[0, A.i], [.3, A.e], [1, A.a]], vol: .45, vib: 13, vibD: .09, breath: .2, atk: .05, rel: .35 }); pulseNoise(c, o, t + 1.25, .3, 30, 900, .4); return 1.6; },
+  heehaw: (c, o, t) => { [0, .7].forEach((d) => { voice(c, o, t + d, .3, { f: [[0, 800], [1, 950]], v: [[0, A.i]], vol: .4, breath: .3, q: 7 }); voice(c, o, t + d + .32, .35, { f: [[0, 260], [1, 200]], v: [[0, A.a], [1, A.o]], vol: .6, breath: .2 }); }); return 1.4; },
+  roar: (c, o, t) => { voice(c, o, t, 1.6, { f: [[0, 85], [.25, 150], [.6, 120], [1, 70]], v: [[0, A.o], [.3, A.a], [1, A.u]], vol: .8, breath: .6, am: 38, amD: .5, q: 5, atk: .1, rel: .5 }); return 1.7; },
+  purr: (c, o, t) => { pulseNoise(c, o, t, 1.4, 26, 350, .9); voice(c, o, t, 1.4, { f: [[0, 26], [1, 24]], v: [[0, [180, 400, 900]]], vol: .3, q: 3 }); return 1.4; },
+  honk: (c, o, t) => { [0, .35].forEach((d) => voice(c, o, t + d, .28, { f: [[0, 420], [.4, 460], [1, 360]], v: [[0, [700, 1300, 2600]]], vol: .6, breath: .15, q: 16, atk: .02, rel: .1 })); return .7; },
+  eagle: (c, o, t) => { voice(c, o, t, .9, { f: [[0, 2300], [.15, 2700], [1, 1500]], v: [[0, [2500, 3600, 5000]], [1, [1800, 3000, 4500]]], vol: .35, vib: 38, vibD: .05, breath: .35, q: 6, atk: .02, rel: .4 }); return 1; },
+  monkey: (c, o, t) => { [[0, 420, A.u], [.22, 480, A.u], [.44, 900, A.a], [.7, 1000, A.a]].forEach(([d, f, v]) => voice(c, o, t + d, .2, { f: [[0, f * .8], [.5, f], [1, f * .85]], v: [[0, v]], vol: .5, breath: .25, atk: .02, rel: .08 })); return 1; },
+  buzz: (c, o, t) => { voice(c, o, t, 1.3, { f: [[0, 210], [.3, 245], [.7, 200], [1, 230]], v: [[0, [700, 1900, 3400]]], vol: .35, vib: 9, vibD: .02, am: 140, amD: .4, q: 4, atk: .15, rel: .4 }); return 1.3; },
+  squeak: (c, o, t) => { [0, .2, .33].forEach((d) => voice(c, o, t + d, .1, { f: [[0, 2800], [.5, 3500], [1, 3000]], v: [[0, [3000, 6000, 8000]]], type: 'triangle', vol: .45, q: 3, atk: .01, rel: .04 })); return .5; },
+  chirp: (c, o, t) => { let d = 0; for (let i = 0; i < 6; i++) { const top = 3600 + Math.random() * 1200, l = .06 + Math.random() * .05; tone(c, o, t + d, l, top, top * .55, 'sine', .3, i % 2 ? 40 : 0); d += l + .03; } return d + .1; },
+  whale: (c, o, t) => { voice(c, o, t, 2, { f: [[0, 180], [.4, 420], [.7, 380], [1, 140]], v: [[0, A.u], [.5, A.o], [1, A.u]], type: 'triangle', vol: .6, vib: 3, vibD: .03, breath: .05, q: 4, atk: .3, rel: .6 }); return 2; },
+  dolphin: (c, o, t) => { for (let i = 0; i < 8; i++) noise(c, o, t + i * .03, .01, 6000, 6000, .35, 2); [[.3, 2200, 4200], [.55, 4000, 2600], [.8, 2600, 4800]].forEach(([d, a, b]) => tone(c, o, t + d, .2, a, b, 'sine', .25)); return 1.1; },
+};
+// mismo volumen para todos (medido): unos salían muy fuertes y otros muy bajitos
+const REAL_GAIN = { moo: 1.15, meow: .4, bark: .5, quack: 1.6, croak: 1.7, hoot: .45, coo: .32, neigh: 2.2, heehaw: 1.6, roar: .9, purr: 1.1, honk: 1.8, eagle: .63, monkey: 1.4, buzz: 1.35, squeak: .38, chirp: 2, whale: .3, dolphin: 2 };
+for (const k in REAL) SOUNDS[k] = (c, o, t) => { const g = c.createGain(); g.gain.value = REAL_GAIN[k] || 1; g.connect(o); return REAL[k](c, g, t); };
 function playSfx(name, once) {
   return new Promise((res) => {
     const c = audioCtx(), fn = SOUNDS[name];
@@ -319,6 +374,7 @@ function playSfx(name, once) {
       const comp = c.createDynamicsCompressor(); comp.threshold.value = -20; comp.ratio.value = 6;
       sfxOut = c.createGain(); sfxOut.gain.value = once ? 1.5 : 2.6;
       sfxOut.connect(comp).connect(c.destination);
+      if (name !== 'tick') { const w = c.createGain(); w.gain.value = 0.35; sfxOut.connect(reverb(c)).connect(w).connect(comp); } // eco de ambiente
       // Un solo sonido, una sola vez.
       const at = fn(c, sfxOut, c.currentTime + 0.05) + 0.1;
       setTimeout(res, at * 1000 + 200);
@@ -605,12 +661,14 @@ views.home = () => {
       <div id="homeStatus" class="muted small" style="margin-top:8px"></div>
     </div>
     <div class="row share-row">${SB_URL ? '<button class="grow rank-cta" id="toRank">🏆 Ranking</button>' : ''}<button class="grow share-cta" id="shareBtn">📤 Compartir la app</button></div>
+    <button class="block soft" id="toChars" style="margin-top:8px">🐾 Ver todos los personajes</button>
     <h2>Mis áreas</h2>
     ${items || '<p class="muted">Todavía no agregaste ninguna.</p>'}`;
   const ng = document.getElementById('nameGo');
   if (ng) { const ni = document.getElementById('nameInput'); ni.onkeydown = (e) => { if (e.key === 'Enter') ng.click(); };
     ng.onclick = () => { const n = ni.value.trim(); if (!n) return; settings.name = n; save(); render(); speak(`Hola, soy tu profe. ¿Qué querés aprender hoy?`); }; }
   const tr = document.getElementById('toRank'); if (tr) tr.onclick = () => go('ranking');
+  document.getElementById('toChars').onclick = () => go('characters');
   document.getElementById('shareBtn').onclick = () => shareApp();
   const ts = document.getElementById('toSettings'); if (ts) ts.onclick = (e) => { e.preventDefault(); go('settings'); };
   app.querySelectorAll('[data-sid]').forEach((el) => el.onclick = () => go('subject', { sid: el.dataset.sid }));
@@ -663,7 +721,11 @@ views.subject = () => {
           </div>` : ''}
       </div>`;
     }).join('')}
+    ${courseDone(s) ? `<div class="card final-card"><b>🎓 ¡Terminaste todo el curso!</b>
+      <div class="muted small" style="margin:6px 0 10px">Ahora te toca el examen final: 10 preguntas de todas las etapas.${s.finalBest != null ? ` Tu mejor nota: <b>${fmt(s.finalBest)}</b>.` : ''}</div>
+      <button class="block" id="finalGo"><span>${s.finalBest != null ? 'Rendir de nuevo el examen final' : 'Rendir el examen final →'}</span></button></div>` : ''}
     <div style="text-align:center;margin-top:24px"><button class="plain small" id="delSubj">Borrar esta área</button></div>`;
+  const fg = document.getElementById('finalGo'); if (fg) fg.onclick = () => startExam(s, s.stages.length - 1, 'final', fg);
   app.querySelectorAll('[data-toggle]').forEach((el) => el.onclick = () => {
     const i = +el.dataset.toggle;
     if (i > s.current && !s.stages[i].done) { return; }
@@ -788,6 +850,19 @@ async function learnTurn(s, st, m, text) {
   }
 }
 
+// ---------- Galería: todos los personajes, por nivel ----------
+views.characters = () => {
+  setHeader('Personajes');
+  const seen = rot.seen || [], all = LEVELS.reduce((n, l) => n + l.chars.length, 0);
+  const got = LEVELS.reduce((n, l) => n + l.chars.filter((c) => seen.includes(c[0])).length, 0);
+  app.innerHTML = `
+    <p class="muted small">Hay <b>${all}</b> personajes. Te tocaron <b>${got}</b>. Tocá uno para escuchar su sonido.</p>
+    ${LEVELS.map((l, i) => { const next = LEVELS[i + 1];
+      return `<h2>${l.min >= 6 ? '🌟' : '🌱'} Nota ${fmt(l.min)}${next ? ' a ' + fmt(Math.round((next.min - 0.1) * 10) / 10) : ' a 10'}</h2>
+      <div class="char-grid">${l.chars.map((c) => `<button class="char-card ${seen.includes(c[0]) ? 'got' : ''}" data-snd="${c[4]}"><span class="char-emoji">${c[2]}</span><span>${esc(c[0])}</span>${seen.includes(c[0]) ? '<span class="char-got">✓</span>' : ''}</button>`).join('')}</div>`; }).join('')}`;
+  app.querySelectorAll('[data-snd]').forEach((el) => el.onclick = () => { audioCtx(); playSfx(el.dataset.snd, true); });
+};
+
 // ---------- Exámenes ----------
 const EXAMS = {
   rapido: { name: 'Repaso rápido', n: 3, desc: '3 preguntas cortas para ver si te quedó lo principal.', unlocks: false },
@@ -797,6 +872,8 @@ const EXAMS = {
 };
 
 EXAMS.modulo = { name: 'Examen del módulo', n: 2, desc: '', unlocks: false };
+EXAMS.final = { name: 'Examen final del curso', n: 10, desc: '10 preguntas de TODO el curso.', unlocks: false };
+const courseDone = (s) => s.stages.length > 0 && s.stages.every((x) => x.done);
 async function startModuleExam(s, si, mi, btn) {
   const m = s.stages[si].modules[mi];
   btn.disabled = true; btn.textContent = 'Preparando examen…';
@@ -813,7 +890,7 @@ views.examMenu = () => {
   app.innerHTML = `
     <div class="muted">Etapa ${view.si + 1}: <b style="color:var(--text)">${esc(st.title)}</b></div>
     <p class="muted small">Respondé escribiendo o dictando con el teclado. Cada respuesta tiene dos notas del 1 al 10: <b>corrección</b> (si está bien) y <b>claridad</b> (si se entiende cómo lo explicás).</p>
-    ${Object.entries(EXAMS).map(([k, e]) => `<button class="exam-type" data-type="${k}"><b>${e.name}</b><span>${e.desc}</span></button>`).join('')}
+    ${Object.entries(EXAMS).filter(([k]) => k !== 'modulo' && k !== 'final').map(([k, e]) => `<button class="exam-type" data-type="${k}"><b>${e.name}</b><span>${e.desc}</span></button>`).join('')}
     ${st.exams.length ? `<h2>Tus notas en esta etapa</h2>${st.exams.slice().reverse().map((e) => `
       <div class="card between"><div><b>${esc(EXAMS[e.type]?.name || e.type)}</b><div class="muted small">${new Date(e.date).toLocaleDateString('es-AR')} · corrección ${fmt(e.correct)} · claridad ${fmt(e.clarity)}</div></div>
       <span class="pill ${e.score >= PASS ? 'ok' : 'bad'}">${fmt(e.score)}</span></div>`).join('')}` : ''}`;
@@ -823,14 +900,16 @@ views.examMenu = () => {
 async function startExam(s, si, type, btn) {
   const st = s.stages[si], cfg = EXAMS[type];
   btn.disabled = true; btn.querySelector('span').textContent = 'Preparando preguntas…';
-  const scope = type === 'integrador'
+  const scope = type === 'final'
+    ? s.stages.map((x) => `${x.title}: ${(x.modules || []).map((m) => m.title).join(', ')}`).join(' | ')
+    : type === 'integrador'
     ? s.stages.slice(0, Math.max(si, s.current) + 1).map((x) => `${x.title}: ${(x.modules || []).map((m) => m.title).join(', ')}`).join(' | ')
     : `${st.title}: ${(st.modules || []).map((m) => m.title).join(', ')}`;
   const kind = type === 'practico' ? 'situaciones prácticas de la vida real donde haya que aplicar lo aprendido (cada una de 2 o 3 frases, terminando en una pregunta)'
     : 'preguntas abiertas y concretas que se respondan en 1 a 4 frases';
   try {
     const j = await askJSON(teacher(), `Tema: ${s.topic}. Contenido a evaluar: ${scope}.
-Armá ${cfg.n} ${kind}, variadas, de dificultad progresiva. Forma: {"questions":["...","..."]}`, 1200);
+Armá ${cfg.n} ${kind}, variadas, de dificultad progresiva.${type === 'final' ? ' Es el EXAMEN FINAL: repartí las preguntas entre TODAS las etapas, y que al menos una pida relacionar ideas de etapas distintas.' : ''} Forma: {"questions":["...","..."]}`, 1200);
     go('exam', { sid: s.id, si, type, questions: j.questions.slice(0, cfg.n), answers: [], idx: 0 });
   } catch (e) { btn.disabled = false; btn.querySelector('span').textContent = cfg.desc; alertBox(e.message); }
 }
@@ -883,7 +962,7 @@ views.exam = () => {
     } catch (e) { send.disabled = false; document.getElementById('examStatus').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
   };
 };
-// Niveles chistosos (de menor a mayor). "min" = nota mínima. Cada nivel tiene 12 personajes con su sonido y sus chistes cortos,
+// Niveles chistosos (de menor a mayor). "min" = nota mínima. Cada nivel tiene 16 personajes con su sonido y sus chistes cortos,
 // más chistes generales del nivel. Se van turnando sin repetir hasta usar todos. Desde 6, todos positivos.
 const LEVELS = [
   { min: 0, chars: [
@@ -899,6 +978,10 @@ const LEVELS = [
     ['Papa olvidada en la alacena', 'Sos una Papa olvidada en la alacena', '🥔', ['Te salieron brotes, pero ninguna respuesta.', 'Estás quietita en la oscuridad. Salí a la luz, que hay que estudiar.'], 'thud'],
     ['Media sin par', 'Sos una Media sin par', '🧦', ['Perdiste a tu compañera y también la respuesta. Qué día.', 'Nadie sabe adónde se van las medias. Ni las respuestas.'], 'pop'],
     ['Grano de arena perdido', 'Sos un Grano de arena perdido', '⏳', ['Uno entre millones, y justo vos no sabías.', 'Todas las playas empiezan con un grano. Vos ya estás.'], 'swoosh'],
+    ['Tapita de gaseosa perdida', 'Sos una Tapita de gaseosa perdida', '🔘', ['Rodaste abajo de la heladera y ahí quedaste.', 'Sin botella y sin respuesta.'], 'pop'],
+    ['Pelusa de bolsillo', 'Sos una Pelusa de bolsillo', '☁️', ['Nadie sabe de dónde saliste. Tus respuestas tampoco.', 'Suavecita, pero vacía.'], 'pop'],
+    ['Babosa de jardín', 'Sos una Babosa de jardín', '🐌', ['Dejaste un caminito brillante… de respuestas mal.', 'Lenta pero constante. Bueno, lenta.'], 'squish'],
+    ['Hongo de heladera', 'Sos un Hongo de heladera', '🍄', ['Creciste en el fondo, al lado del tema que no abriste.', 'Hasta el queso viejo sabe más.'], 'bubble'],
   ], jokes: ['Del fondo solo se puede subir. Tenés el ascensor para vos solo.', 'Los dinosaurios también empezaron siendo un bichito. Vos repasás hoy.', 'Hoy fue un día de esos. Mañana, con un repaso, es otro.', 'Como cuando la abuela pregunta si comiste y decís que sí pero no. Así fue este examen.', '¡Qué nivel! ¡Qué capacidad! ¡Qué… bueno, no me sale seguir.'] },
   { min: 2, chars: [
     ['Plancton', 'Sos un Plancton', '🦐', ['Vino la ballena a tomarte lección y te hiciste el desmayado.', 'Chiquitito, pero ya largás burbujitas de conocimiento.'], 'bubble'],
@@ -913,13 +996,17 @@ const LEVELS = [
     ['Cangrejo al revés', 'Sos un Cangrejo al revés', '🦀', ['Caminás de costado y encima para atrás.', 'Pinzas tenés. Falta agarrar la respuesta.'], 'scuttle'],
     ['Pez dorado distraído', 'Sos un Pez dorado distraído', '🐠', ['Tres segundos de memoria. Y se nota.', 'Diste veinte vueltas a la pecera y cada vuelta era nueva.'], 'bloop'],
     ['Rana sin salto', 'Sos una Rana sin salto', '🐸', ['Te preparaste para saltar y te quedaste sentada.', 'Croás bien, falta el salto.'], 'croak'],
+    ['Lombriz confundida', 'Sos una Lombriz confundida', '🪱', ['No sabés cuál es tu cabeza. Y se nota.', 'Cavaste para abajo y la respuesta estaba arriba.'], 'squish'],
+    ['Mosquito sin rumbo', 'Sos un Mosquito sin rumbo', '🦟', ['Zumbaste toda la noche y no picaste ni una.', 'Mucho ruido y pocas respuestas.'], 'buzz'],
+    ['Cucaracha optimista', 'Sos una Cucaracha optimista', '🪳', ['Sobrevivís a todo, hasta a este examen.', 'Te pisaron la nota, pero seguís caminando.'], 'scuttle'],
+    ['Polilla del placard', 'Sos una Polilla del placard', '🦋', ['Te comiste el suéter, pero no el libro.', 'Vas a la luz… y la luz era la heladera.'], 'flutter'],
   ], jokes: ['Subiste un escalón de la evolución. Falta la escalera entera.', 'Los gigantes también fueron chiquitos alguna vez.', 'Algo quedó en la cabeza. Ahora lo regamos.', 'Le ganaste a una piedra. Por poquito. La piedra pidió revancha.', 'Estuviste tan cerca de la respuesta como yo de ganar el Quini.'] },
   { min: 3, chars: [
     ['Larvoide', 'Sos un Larvoide', '🐛', ['"Algún día voy a ser mariposa", dijiste. El espejo contestó: "Primero estudiá".', 'Comé tema todo el día como larva y te salen las alas.'], 'squish'],
     ['Renacuajo', 'Sos un Renacuajo', '🐸', ['Todavía con cola, pero ya te asoman las patitas.', 'Nadás en círculos en el charco y pensás que es el océano.'], 'croak'],
     ['Caracol sin casa', 'Sos un Caracol sin casa', '🐌', ['Saliste a las ocho, llegaste a las cinco y sin la casa. Pero llegaste.', '"Disfruto el camino", dice el caracol. Disfrutalo, pero apurá un poco.'], 'squish'],
     ['Gusano de seda dormilón', 'Sos un Gusano de seda dormilón', '🐛', ['Empezaste el capullo, te pusiste cómodo y te dormiste adentro.', 'Con tu seda se hacen vestidos de rey. Ya hilaste un poquito.'], 'squish'],
-    ['Babosa de jardín', 'Sos una Babosa de jardín', '🐌', ['Cruzaste el jardín para ir a clase y llegaste al acto de fin de año.', 'Vas dejando un caminito brillante. Poquito, pero brilla.'], 'squish'],
+    ['Babosa brillante', 'Sos una Babosa brillante', '🐌', ['Cruzaste el jardín para ir a clase y llegaste al acto de fin de año.', 'Vas dejando un caminito brillante. Poquito, pero brilla.'], 'squish'],
     ['Grillo desafinado', 'Sos un Grillo desafinado', '🦗', ['Cantaste la lección toda la noche y te tiraron una zapatilla. Era la respuesta equivocada.', 'Frotá un poco más las neuronas y te sale la melodía.'], 'cricket'],
     ['Cascarudo panza arriba', 'Sos un Cascarudo panza arriba', '🪲', ['Panza arriba, moviendo las patitas: "Qué lindo se ve el cielo". Dale, date vuelta.', 'Todo cascarudo termina dándose vuelta. Vos también.'], 'thud'],
     ['Ciempiés con calambre', 'Sos un Ciempiés con calambre', '🐛', ['Se te acalambraron las cien patas y llegaste saltando en una. ¡Pero llegaste!', 'Te pusiste a pensar cómo caminar y te caíste. Menos pensar, más repasar.'], 'scuttle'],
@@ -927,6 +1014,10 @@ const LEVELS = [
     ['Zorrino tímido', 'Sos un Zorrino tímido', '🦨', ['Ni el olor te salió bien hoy.', 'Tranqui, que nadie se acerca a burlarse.'], 'squish'],
     ['Gallina pensativa', 'Sos una Gallina pensativa', '🐔', ['Pusiste un huevo de respuesta. Medio crudo.', 'Picoteaste por todos lados y algo encontraste.'], 'chirp'],
     ['Topo con anteojos', 'Sos un Topo con anteojos', '🐀', ['Cavaste bien, pero salió en cualquier lado.', 'Los anteojos ayudan. Falta abrir los ojos.'], 'thud'],
+    ['Tortuga dormida', 'Sos una Tortuga dormida', '🐢', ['Te metiste en el caparazón justo en la pregunta difícil.', 'Despacito se llega. Despertate primero.'], 'thud'],
+    ['Ardilla olvidadiza', 'Sos una Ardilla olvidadiza', '🐿️', ['Enterraste las respuestas y no te acordás dónde.', 'Juntaste nueces, falta juntar ideas.'], 'squeak'],
+    ['Pingüino resbaloso', 'Sos un Pingüino resbaloso', '🐧', ['Ibas bien y te patinaste en el hielo.', 'Elegante de traje, flojito de respuestas.'], 'honk'],
+    ['Perezoso en pausa', 'Sos un Perezoso en pausa', '🦥', ['Contestaste… mañana, ¿no?', 'Colgado del árbol y del tema.'], 'purr'],
   ], jokes: ['Todavía no sos mariposa, pero el capullo está en obra.', 'Ya tenés los bordes del rompecabezas. Falta el medio.', 'La tortuga le ganó a la liebre, acordate.', 'Contestaste con una seguridad bárbara. Lástima que era otra cosa.', 'Me gustó el esfuerzo. Lo demás, lo repasamos.'] },
   { min: 4, chars: [
     ['Araña de rincón', 'Sos una Araña de rincón', '🕷️', ['Tejiste la telaraña y cayó una mosca, un papelito y polvo. La respuesta no.', 'Salí del rincón, que el tema no muerde.'], 'scuttle'],
@@ -941,6 +1032,10 @@ const LEVELS = [
     ['Ganso enojado', 'Sos un Ganso enojado', '🪿', ['Le gritaste al examen. No funcionó.', 'Mucha actitud. Ahora sumale respuestas.'], 'honk'],
     ['Gorrión de vereda', 'Sos un Gorrión de vereda', '🐦', ['Juntaste miguitas de respuestas. Algo comiste.', 'Chiquito y rápido. Falta un poquito de vuelo.'], 'chirp'],
     ['Cabra trepadora', 'Sos una Cabra trepadora', '🐐', ['Subiste media montaña. La otra mitad, mañana.', 'Te agarrás de cualquier piedrita. Seguí subiendo.'], 'heehaw'],
+    ['Gato curioso', 'Sos un Gato curioso', '🐱', ['Tiraste el vaso de la mesa y media respuesta.', 'Siete vidas tenés. Usá una para estudiar.'], 'meow'],
+    ['Pato distraído', 'Sos un Pato distraído', '🦆', ['Nadaste en círculos alrededor de la respuesta.', 'Cuac. Eso dijiste. Casi.'], 'quack'],
+    ['Murciélago al revés', 'Sos un Murciélago al revés', '🦇', ['Ves todo patas para arriba. El examen también.', 'Volás de noche. Estudiá de día.'], 'squeak'],
+    ['Burrito testarudo', 'Sos un Burrito testarudo', '🫏', ['Te plantaste en la respuesta equivocada.', 'Terco sos. Ahora sé terco con el estudio.'], 'heehaw'],
   ], jokes: ['Casi la mitad: el vaso está medio lleno y el profe trajo la jarra.', 'Estás en la puerta del aprobado. Tocá el timbre con un repaso.', 'Tenés todos los ingredientes. Falta cocinar.', 'Fuiste por medialunas y volviste con las migas. Algo trajiste.', 'El examen se rió un poquito. La próxima te reís último vos.'] },
   { min: 5, chars: [
     ['Cuadrúpedo', 'Sos un Cuadrúpedo', '🐕', ['Viste a un humano en dos patas, dijiste "qué fácil" y te caíste de cola.', 'En cuatro patas se está firme, pero parado se ve más lejos.'], 'bark'],
@@ -955,6 +1050,10 @@ const LEVELS = [
     ['Chancho filósofo', 'Sos un Chancho filósofo', '🐖', ['Pensaste mucho y contestaste la mitad.', 'Hay barro en las ideas, pero ya se aclaran.'], 'moo'],
     ['Llama de la Puna', 'Sos una Llama de la Puna', '🦙', ['Escupiste la respuesta. Casi aciertas.', 'Subiste alto, falta un poquito de aire.'], 'neigh'],
     ['Canguro novato', 'Sos un Canguro novato', '🦘', ['Saltaste bien, pero en la dirección equivocada.', 'Tenés bolsillo: guardá ahí el repaso.'], 'boing'],
+    ['Perro guardián a medias', 'Sos un Perro guardián a medias', '🐕', ['Ladraste la mitad de las respuestas.', 'Moviste la cola. Falta mover la cabeza.'], 'bark'],
+    ['Ternero curioso', 'Sos un Ternero curioso', '🐄', ['Rumiaste la respuesta. Ya casi la tragás.', 'Mitad leche, mitad dudas.'], 'moo'],
+    ['Caballo de calesita', 'Sos un Caballo de calesita', '🐴', ['Diste vueltas, pero llegaste a la mitad.', 'Sube y baja, como tu nota.'], 'neigh'],
+    ['Mono saltarín', 'Sos un Mono saltarín', '🐒', ['Saltaste de rama en rama y agarraste la mitad.', 'Mucho salto. Ahora, puntería.'], 'monkey'],
   ], jokes: ['Llegaste a la parada justo cuando arranca el colectivo. ¡Corré que lo alcanzás!', 'Raspando, pero en camino. Otro intento y sale.', 'Medio examen en el bolsillo. Vamos por la otra mitad.', 'Cinco: el número más tibio del universo. Como el mate que te olvidaste.', 'Así de cerca, como el colectivo que te cierra la puerta en la cara.'] },
   { min: 6, chars: [
     ['Cachalote bípedo', 'Sos un Cachalote bípedo', '🐋', ['Saliste del mar caminando en dos patas y dijiste: "Vine a aprobar". Y aprobaste.', 'El cerebro más grande del planeta, y ahora sabemos para qué: para aprobar.'], 'whale'],
@@ -969,6 +1068,10 @@ const LEVELS = [
     ['Ballena cantora', 'Sos una Ballena cantora', '🐳', ['Cantaste la respuesta y se escuchó en todo el océano.', 'Gigante y afinada. ¡Aprobado!'], 'whale'],
     ['Pato de carrera', 'Sos un Pato de carrera', '🦆', ['Nadaste, caminaste y volaste… directo al aprobado.', 'El pato más rápido de la laguna.'], 'quack'],
     ['Zorro astuto', 'Sos un Zorro astuto', '🦊', ['Encontraste la respuesta antes que nadie.', 'Astuto y simpático. Buena combinación.'], 'squeak'],
+    ['Paloma mensajera', 'Sos una Paloma mensajera', '🕊️', ['Llevaste la respuesta justo a destino.', 'Aprobado y con buena orientación.'], 'coo'],
+    ['Delfín simpático', 'Sos un Delfín simpático', '🐬', ['Saltaste del agua con el aprobado en la boca.', 'Inteligente y buena onda.'], 'dolphin'],
+    ['Carpincho viajero', 'Sos un Carpincho viajero', '🦫', ['Llegaste tranquilo, pero llegaste.', 'Relajado y aprobado. Así se hace.'], 'purr'],
+    ['Gaviota exploradora', 'Sos una Gaviota exploradora', '🐦', ['Encontraste la respuesta desde el cielo.', 'Volaste alto y aterrizaste en el seis.'], 'eagle'],
   ], jokes: ['¡Aprobaste! Ya sos del club de los que saben. Hay medialunas.', 'Lo sacaste adelante. Clap, clap, clap.', 'Le estás agarrando la mano. Vamos por más.', 'Raspando, pero adentro. Gol de rebote en el minuto noventa: vale igual.', 'Ya estás del lado de los que aprueban. No te agrandes. Bueno, un poquito.'] },
   { min: 7, chars: [
     ['Presidente de país del tercer mundo', 'Sos un Presidente de país del tercer mundo', '🎩', ['Prometiste saber el tema y, a diferencia de otros presidentes, cumpliste.', 'Ya tenés la banda presidencial. Ahora no te endeudes con el FMI.'], 'fanfare'],
@@ -983,6 +1086,10 @@ const LEVELS = [
     ['DJ del conocimiento', 'Sos un DJ del conocimiento', '🎧', ['Mezclaste las ideas y la pista quedó bárbara.', 'Subile el volumen a ese siete.'], 'laser'],
     ['Búho bibliotecario', 'Sos un Búho bibliotecario', '🦉', ['Te sabés dónde está cada libro. Y lo que dice.', 'Shh… estamos aprobando.'], 'hoot'],
     ['Capitán de selección', 'Sos un Capitán de selección', '⚽', ['Llevás la cinta y el equipo te sigue.', 'Gol de cabeza en el examen.'], 'fanfare'],
+    ['Lobo de la manada', 'Sos un Lobo de la manada', '🐺', ['La manada te sigue porque sabés el camino.', 'Aullaste la respuesta correcta.'], 'roar'],
+    ['Caballo campeón', 'Sos un Caballo campeón', '🐎', ['Ganaste la carrera por varias cabezas.', 'Galopaste derecho al siete.'], 'neigh'],
+    ['Elefante memorioso', 'Sos un Elefante memorioso', '🐘', ['No te olvidás de nada. ¡Grande!', 'Pisás fuerte en el tema.'], 'trumpet'],
+    ['Detective del saber', 'Sos un Detective del saber', '🕵️', ['Encontraste cada pista y resolviste el caso.', 'Elemental, querido alumno.'], 'ding'],
   ], jokes: ['Ya jugás en primera. Falta poquito para la Selección.', 'Si esto fuera una carrera, ya estás en el podio.', 'El profe está tan contento que ya piensa en el próximo tema.', '¡Pará, pará! ¿Me estás cargando? Ese siete vale un asado.', 'Ya sabés más que mi cuñado, que opina de todo.'] },
   { min: 8, chars: [
     ['Homo erectus', 'Sos un Homo erectus', '🦍', ['Te paraste derechito, miraste alrededor y dijiste: "Uy, ahora entiendo todo".', 'La evolución tardó millones de años en pararse. Vos, un examen.'], 'drum'],
@@ -997,6 +1104,10 @@ const LEVELS = [
     ['Pulpo genio', 'Sos un Pulpo genio', '🐙', ['Ocho brazos, ocho puntos. Casualidad no es.', 'Abriste el frasco del tema en dos segundos.'], 'bloop'],
     ['Pianista virtuoso', 'Sos un Pianista virtuoso', '🎹', ['Tocaste cada respuesta sin errar una nota.', 'Aplausos de pie para el concierto.'], 'guitar'],
     ['Orca estratega', 'Sos una Orca estratega', '🐋', ['Planeaste cada respuesta como una jugada.', 'La reina del océano, y del examen.'], 'whale'],
+    ['Halcón peregrino', 'Sos un Halcón peregrino', '🦅', ['Viste la respuesta desde un kilómetro.', 'El más rápido del cielo. Y del examen.'], 'eagle'],
+    ['León sabio', 'Sos un León sabio', '🦁', ['Rugiste y el examen se asustó.', 'Rey de la selva y del tema.'], 'roar'],
+    ['Científica brillante', 'Sos una Científica brillante', '🔬', ['Hiciste el experimento y salió perfecto.', 'Eureka. Así, sin más.'], 'magic'],
+    ['Chef de cinco estrellas', 'Sos un Chef de cinco estrellas', '👨‍🍳', ['Cocinaste las respuestas al punto justo.', 'Plato perfecto. Ocho estrellas Michelin.'], 'tada'],
   ], jokes: ['Ya podrías explicarle el tema a otro. Y te entenderían.', 'El profe le contó a todos los otros profes.', 'Te falta muy poquito para la cima.', 'Me estás haciendo quedar mal a mí, que soy el profe.', 'Si esto fuera fútbol, ya te llaman de Europa.'] },
   { min: 9, chars: [
     ['Ninja supremo', 'Sos un Ninja supremo', '🥷', ['Entraste sin ruido, respondiste todo y el profe ni se dio cuenta de que terminaste.', 'Cinturón negro en este tema.'], 'swoosh'],
@@ -1011,6 +1122,10 @@ const LEVELS = [
     ['Guepardo relámpago', 'Sos un Guepardo relámpago', '🐆', ['Respondiste tan rápido que el examen quedó atrás.', 'El más veloz de la sabana del saber.'], 'swoosh'],
     ['Astronauta comandante', 'Sos un Astronauta comandante', '👩‍🚀', ['Pilotaste la nave sin un solo error.', 'Misión cumplida, comandante.'], 'rocket'],
     ['Maestro del ajedrez', 'Sos un Maestro del ajedrez', '♟️', ['Jaque mate al examen en pocas jugadas.', 'Pensaste diez movidas adelante.'], 'ding'],
+    ['Fénix de fuego azul', 'Sos un Fénix de fuego azul', '🔥', ['Ardiste de sabiduría. ¡Qué nivel!', 'Renaciste en modo genio.'], 'magic'],
+    ['Superhéroe del aula', 'Sos un Superhéroe del aula', '🦸', ['Salvaste el examen con tu súper cerebro.', 'Capa puesta, nueve en el bolsillo.'], 'hero'],
+    ['Cóndor de los Andes', 'Sos un Cóndor de los Andes', '🦅', ['Desde arriba lo ves todo. Y todo bien.', 'Majestuosa y sin errores.'], 'eagle'],
+    ['Genio de la lámpara', 'Sos un Genio de la lámpara', '🧞', ['Te pidieron tres deseos y diste diez respuestas.', 'Frotaron la lámpara y salió un nueve.'], 'magic'],
   ], jokes: ['Casi perfecto. El examen te quiere pedir un autógrafo.', 'Nivel maestro. Pocos llegan hasta acá.', 'Si seguís así, el profe te va a pedir clases a vos.', '¿Querés que te aplauda de pie? Ya estoy de pie.', 'No tengo nada para corregirte, y a un profe eso le duele.'] },
   { min: 9.7, chars: [
     ['Dios', 'Sos un Dios', '⚡', ['El examen te vio y te pidió disculpas por molestarte.', 'Ya no estudiás el tema: el tema te estudia a vos. Y saca un dos.'], 'thunder'],
@@ -1025,6 +1140,10 @@ const LEVELS = [
     ['Fuerza de la naturaleza', 'Sos una Fuerza de la naturaleza', '🌪️', ['Pasaste por el examen como un huracán.', 'Nadie te puede parar.'], 'thunder'],
     ['Profesor del profesor', 'Sos el Profesor del profesor', '🎓', ['Ahora el profe toma clases con vos.', 'Te ganaste la tiza dorada.'], 'tada'],
     ['Dragón dorado', 'Sos un Dragón dorado', '🐲', ['Brillás tanto que encandilás.', 'Leyenda dorada del conocimiento.'], 'roar'],
+    ['Sol radiante', 'Sos un Sol radiante', '☀️', ['Iluminás a todo el que estudia con vos.', 'Brillás más que nunca.'], 'choir'],
+    ['Unicornio legendario', 'Sos un Unicornio legendario', '🦄', ['Dicen que no existís. Acá estás.', 'Mágico, único y perfecto.'], 'magic'],
+    ['Emperador del saber', 'Sos el Emperador del saber', '👑', ['Hasta los planetas te hacen reverencia.', 'Corona merecida.'], 'fanfare'],
+    ['Mente infinita', 'Sos una Mente infinita', '🧠', ['Tu cabeza tiene su propia galaxia.', 'Pensás a la velocidad de la luz.'], 'thunder'],
   ], jokes: ['No hay nada más que enseñarte. El profe se va de vacaciones.', 'Desbloqueaste el final secreto del juego.', 'Te reservamos el aula y la tiza.', 'Me rindo. Te doy la tiza, el pizarrón y el sueldo. Bueno, el sueldo no.', 'Este examen lo cuelgo en el living, al lado de la foto de la abuela.'] },
 ];
 const levelFor = (n) => [...LEVELS].reverse().find((l) => n >= l.min) || LEVELS[0];
@@ -1036,6 +1155,7 @@ function pickLevel(n) {
   if (!bag.length) bag = l.chars.map((c) => c[0]).filter((nm) => nm !== rot.last[key] || l.chars.length < 2); // bolsa nueva, sin repetir el último
   const name = bag[Math.floor(Math.random() * bag.length)];
   rot.bags[key] = bag.filter((x) => x !== name); rot.last[key] = name;
+  rot.seen = rot.seen || []; if (!rot.seen.includes(name)) rot.seen.push(name);
   const c = l.chars.find((x) => x[0] === name);
   const pool = c[3].concat(l.jokes);
   let fresh = pool.filter((j) => !rot.used.includes(j));
@@ -1256,6 +1376,7 @@ function finishExam(s) {
     return go('result', { sid: s.id, si: view.si, mi: view.mi, type: 'modulo', score, correct, clarity, unlocked, feedback: view.lastFeedback }, false);
   }
   st.exams.push({ type: view.type, date: Date.now(), score, correct, clarity });
+  if (view.type === 'final') s.finalBest = Math.max(s.finalBest ?? 0, score);
   if (cfg.unlocks && score >= PASS && !st.done) {
     st.done = true; unlocked = true;
     if (s.current === view.si) s.current = Math.min(view.si + 1, s.stages.length - 1);
@@ -1271,11 +1392,13 @@ views.result = () => {
   const m = isMod ? st.modules[view.mi] : null;
   const lastMod = isMod && view.mi === st.modules.length - 1;
   if (!view.lv) { view.lv = pickLevel(view.score); view.joke = view.lv.joke; view.gossip = gossip(); }
-  const msg = ok ? (view.unlocked ? '¡Terminaste la etapa! Se habilitó la siguiente.' : view.score >= 8 ? '¡Excelente!' : '¡Muy bien!') : 'Todavía no. Repetí el módulo y probá de nuevo.';
+  const isFinal = view.type === 'final', justDone = view.unlocked && courseDone(s);
+  const msg = isFinal ? (ok ? '¡Aprobaste el examen final del curso! 🎓' : 'Todavía no. Repasá las etapas y rendilo de nuevo.')
+    : ok ? (justDone ? '¡Terminaste todo el curso! Ahora te toca el examen final.' : view.unlocked ? '¡Terminaste la etapa! Se habilitó la siguiente.' : view.score >= 8 ? '¡Excelente!' : '¡Muy bien!') : 'Todavía no. Repetí el módulo y probá de nuevo.';
   app.innerHTML = `
     <div class="result-screen ${ok ? 'pass' : 'fail'}">
       <div class="result-inner">
-        <div class="result-topic">${isMod ? esc(m.title) : esc(cfg.name) + ' · ' + esc(st.title)}</div>
+        <div class="result-topic">${isMod ? esc(m.title) : isFinal ? esc(cfg.name) + ' · ' + esc(s.topic) : esc(cfg.name) + ' · ' + esc(st.title)}</div>
         <div class="result-emoji">${view.lv.emoji}</div>
         <div class="result-label">${settings.name ? esc(settings.name) + ", sacaste" : "Sacaste"}</div>
         <div class="result-num">${fmt(view.score)}</div>
@@ -1285,6 +1408,7 @@ views.result = () => {
         ${view.feedback ? `<div class="result-joke" style="font-style:normal">${esc(view.feedback)}</div>` : ""}
         <div class="result-msg">${msg}</div>
         <div class="result-sub"><span>Corrección <b>${fmt(view.correct)}</b></span><span>Claridad <b>${fmt(view.clarity)}</b></span></div>
+        ${justDone ? '<button class="block result-btn" id="toFinal">🎓 Rendir el examen final →</button>' : ''}
         ${isMod ? `
           ${ok ? '' : '<button class="block result-btn" id="repeat">↻ Repetir módulo</button>'}
           ${!lastMod ? `<button class="block result-btn ${ok ? '' : 'ghost'}" id="nextMod">Siguiente módulo →</button>` : ''}
@@ -1300,7 +1424,9 @@ views.result = () => {
   if (ok) confetti();
   document.getElementById('toSubj').onclick = () => { stack.length = 0; view = { name: 'home' }; go('subject', { sid: s.id }); };
   document.getElementById('shareLvl').onclick = () => shareApp(`${settings.name ? settings.name + ' sacó' : 'Saqué'} ${fmt(view.score)} en ${s.topic}: ${view.lv.sos.replace(/^Sos/, settings.name ? 'es' : 'soy')} ${view.lv.emoji}. ¿Te animás a superarlo? Probá la app:`);
-  const ag = document.getElementById('again'); if (ag) ag.onclick = () => go('examMenu', { sid: s.id, si: view.si }, false);
+  const tf = document.getElementById('toFinal'); if (tf) tf.onclick = () => startExam(s, s.stages.length - 1, 'final', tf);
+  if (tf) tf.innerHTML = '<span>' + tf.innerHTML + '</span>';
+  const ag = document.getElementById('again'); if (ag) ag.onclick = () => isFinal ? go('subject', { sid: s.id }, false) : go('examMenu', { sid: s.id, si: view.si }, false);
   const nm = document.getElementById('nextMod'); if (nm) nm.onclick = () => go('module', { sid: s.id, si: view.si, mi: view.mi + 1 }, false);
   const rp = document.getElementById('repeat'); if (rp) rp.onclick = () => go('module', { sid: s.id, si: view.si, mi: view.mi }, false);
 };
