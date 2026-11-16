@@ -181,12 +181,23 @@
   .ask-q { font-size: 22px; font-weight: 800; margin-bottom: 12px; }
   .ask-input { font-size: 18px; padding: 14px 16px; border: 2px solid #d9d2ff; }
   .speak-btn { display: inline-flex; gap: 6px; align-items: center; }
+
+.chips{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px;-webkit-overflow-scrolling:touch}
+.chip{flex:none;background:#fff;color:var(--text);border:2px solid var(--line,#eee);border-radius:999px;padding:8px 14px;font-weight:700;box-shadow:none}
+.chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.rank-row{display:flex;align-items:center;gap:12px;animation:fadeUp .4s both}
+.rank-row.me{border:3px solid var(--accent)}
+.rank-pos{font-size:26px;width:34px;text-align:center;font-weight:800}
+.rank-emoji{font-size:34px}
+.rank-row .grow{flex:1;min-width:0}
+.rank-cta{margin:4px 0 8px;background:linear-gradient(90deg,#ffd166,#ff8fab);color:#3a2a00}
 </style>
 </head>
 <body>
 <header>
   <button class="icon hidden" id="backBtn" aria-label="Volver">←</button>
   <h1 id="title">Profe de Voz</h1>
+  <button class="icon" id="rankBtn" aria-label="Ranking">🏆</button>
   <button class="icon" id="settingsBtn" aria-label="Configuración">⚙︎</button>
 </header>
 <main id="app"></main>

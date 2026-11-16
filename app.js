@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 21;
+const APP_VERSION = 22;
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
 const tint = (i) => PALETTE[i % PALETTE.length];
 const PASS = 6; // nota mínima para aprobar el examen de etapa
@@ -299,11 +299,13 @@ function go(name, params = {}, push = true) {
 function back() { stopSpeaking(); view = stack.pop() || { name: 'home' }; render(); window.scrollTo(0, 0); }
 document.getElementById('backBtn').onclick = back;
 document.getElementById('settingsBtn').onclick = () => go('settings');
+document.getElementById('rankBtn').onclick = () => go('ranking');
 
 function setHeader(title) {
   document.getElementById('title').textContent = title;
   document.getElementById('backBtn').classList.toggle('hidden', view.name === 'home');
   document.getElementById('settingsBtn').classList.toggle('hidden', view.name === 'settings');
+  document.getElementById('rankBtn').classList.toggle('hidden', view.name !== 'home');
 }
 const views = {};
 function render() {
@@ -362,6 +364,7 @@ views.settings = () => {
       <label>Velocidad: <b id="rateVal">${settings.rate.toFixed(2)}x</b></label>
       <div class="row"><span class="muted small">Lenta</span><input class="grow" id="rate" type="range" min="0.6" max="1.8" step="0.05" value="${settings.rate}"><span class="muted small">Rápida</span></div>
       <label class="row" style="gap:10px;color:var(--text)"><input type="checkbox" id="autoRead" style="width:auto" ${settings.autoRead ? 'checked' : ''}> Leer cada tema en voz alta automáticamente</label>
+      <label class="row" style="gap:10px;color:var(--text);margin-top:10px"><input type="checkbox" id="shareRank" style="width:auto" ${settings.share ? 'checked' : ''}> Aparecer en el ranking (se comparte tu nombre, tus temas y tu nivel)</label>
       <div style="margin-top:14px"><button class="soft" id="testVoice">▶ Probar voz</button></div>
     </div>
 
@@ -413,6 +416,7 @@ views.settings = () => {
   $('rate').oninput = (e) => { settings.rate = +e.target.value; $('rateVal').textContent = settings.rate.toFixed(2) + 'x'; save(); };
   $('rate').onchange = () => speak('Así suena esta velocidad.');
   $('autoRead').onchange = (e) => { settings.autoRead = e.target.checked; save(); };
+  $('shareRank').onchange = (e) => { settings.share = e.target.checked; save(); if (settings.share) subjects.forEach(shareScore); else sbRpc('remove_player', { p_player: settings.playerId }).catch(() => {}); };
   $('testVoice').onclick = () => speak('Hola, soy tu profe. Vamos a aprender juntos, de a poco.', $('testVoice'));
   $('nameSave').onclick = () => { settings.name = $('nameSet').value.trim(); save(); toast(settings.name ? `Listo, ${settings.name}.` : 'Nombre borrado.'); };
   $('wipe').onclick = () => {
@@ -454,11 +458,13 @@ views.home = () => {
       <button id="topicGo" class="block" style="margin-top:10px">Empezar a estudiar →</button>
       <div id="homeStatus" class="muted small" style="margin-top:8px"></div>
     </div>
+    <button class="block rank-cta" id="toRank">🏆 Ver el ranking: ¿qué nivel tienen los demás?</button>
     <h2>Mis áreas</h2>
     ${items || '<p class="muted">Todavía no agregaste ninguna.</p>'}`;
   const ng = document.getElementById('nameGo');
   if (ng) { const ni = document.getElementById('nameInput'); ni.onkeydown = (e) => { if (e.key === 'Enter') ng.click(); };
     ng.onclick = () => { const n = ni.value.trim(); if (!n) return; settings.name = n; save(); render(); speak(`Hola ${n}, soy tu profe. ¿Qué querés aprender hoy?`); }; }
+  document.getElementById('toRank').onclick = () => go('ranking');
   const ts = document.getElementById('toSettings'); if (ts) ts.onclick = (e) => { e.preventDefault(); go('settings'); };
   app.querySelectorAll('[data-sid]').forEach((el) => el.onclick = () => go('subject', { sid: el.dataset.sid }));
   const inp = document.getElementById('topicInput');
@@ -806,6 +812,65 @@ function stageScore(st) {
 const clamp = (n) => Math.max(1, Math.min(10, Math.round(+n || 1)));
 const average = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 
+// ---------- Ranking compartido (Supabase, plan gratis) ----------
+// Esta clave es "publicable": está hecha para ir en la app. Solo deja usar las dos funciones del ranking.
+const SB_URL = '', SB_KEY = '';
+if (!settings.playerId) { settings.playerId = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)); save(); }
+if (settings.share == null) { settings.share = true; save(); }
+async function sbRpc(fn, body) {
+  if (!SB_URL) throw new Error('El ranking todavía no está conectado.');
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: { apikey: SB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  if (!r.ok) throw new Error('No pude conectar con el ranking.');
+  return r.status === 204 ? null : r.json();
+}
+const subjAvg = (s) => average(s.stages.map(stageScore).filter((x) => x != null));
+function shareScore(s) {
+  const avg = subjAvg(s);
+  if (!settings.share || !settings.name || avg == null || !SB_URL) return;
+  const l = levelOf(avg);
+  sbRpc('submit_score', { p_player: settings.playerId, p_name: settings.name.slice(0, 30), p_topic: s.topic.slice(0, 60), p_avg: Math.round(avg * 10) / 10, p_level: l[1], p_emoji: l[2] }).catch(() => {});
+}
+// Al abrir la app, sube los puntajes que ya tenías (por si ya estudiaste antes de que existiera el ranking).
+setTimeout(() => subjects.forEach(shareScore), 3000);
+const medal = (i) => ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
+views.ranking = () => {
+  setHeader('Ranking');
+  const draw = () => {
+    const rows = view.rows || [];
+    const topics = [...new Set(rows.map((r) => r.topic))];
+    let list;
+    if (view.tab === 'general' || !view.tab) {
+      const by = {};
+      rows.forEach((r) => { const k = r.player; (by[k] = by[k] || { name: r.name, me: r.me, xs: [] }).xs.push(r.avg); });
+      list = Object.values(by).map((p) => { const avg = average(p.xs); const l = levelOf(avg); return { ...p, avg, level: l[1], emoji: l[2], extra: `${p.xs.length} ${p.xs.length === 1 ? 'tema' : 'temas'}` }; });
+    } else list = rows.filter((r) => r.topic === view.tab).map((r) => ({ ...r }));
+    list.sort((a, b) => b.avg - a.avg);
+    app.innerHTML = `
+      <div class="card ask-card"><div class="ask-q">🏆 ¿Quién sabe más?</div>
+        <div class="muted small">Acá ves el nivel y el personaje de todas las personas que usan la app.</div></div>
+      <div class="chips">
+        <button class="chip ${!view.tab || view.tab === 'general' ? 'on' : ''}" data-tab="general">🌎 General</button>
+        ${topics.map((t) => `<button class="chip ${view.tab === t ? 'on' : ''}" data-tab="${esc(t)}">${esc(t)}</button>`).join('')}
+      </div>
+      ${view.err ? `<div class="card err">${esc(view.err)}</div>` : !view.rows ? '<p class="muted">Cargando…</p>'
+        : !list.length ? '<p class="muted">Todavía no hay nadie. ¡Rendí un examen y sé el primero!</p>'
+        : list.map((p, i) => `<div class="card rank-row ${p.me ? 'me' : ''}">
+            <div class="rank-pos">${medal(i)}</div>
+            <div class="rank-emoji">${p.emoji}</div>
+            <div class="grow"><b>${esc(p.name)}${p.me ? ' (vos)' : ''}</b><div class="small">${esc(p.level)}</div><div class="muted small">${esc(p.extra || '')}</div></div>
+            <div class="pill ${p.avg >= PASS ? 'ok' : 'bad'}">${fmt(p.avg)}</div></div>`).join('')}
+      ${!settings.share ? '<p class="muted small">Vos no aparecés porque desactivaste "Aparecer en el ranking" en Configuración.</p>' : !settings.name ? '<p class="muted small">Para aparecer, poné tu nombre en Configuración.</p>' : ''}`;
+    app.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { view.tab = b.dataset.tab; draw(); });
+  };
+  draw();
+  if (!view.rows && !view.loading) {
+    view.loading = true;
+    sbRpc('get_ranking', { p_player: settings.playerId })
+      .then((rows) => { view.rows = (rows || []).map((r) => ({ ...r, avg: +r.avg })); })
+      .catch((e) => { view.err = e.message; })
+      .finally(() => { view.loading = false; if (view.name === 'ranking') draw(); });
+  }
+};
 function finishExam(s) {
   const st = s.stages[view.si], cfg = EXAMS[view.type];
   const correct = average(view.answers.map((a) => a.correct)), clarity = average(view.answers.map((a) => a.clarity));
@@ -818,7 +883,7 @@ function finishExam(s) {
       st.done = true; unlocked = true;
       if (s.current === view.si) s.current = Math.min(view.si + 1, s.stages.length - 1);
     }
-    save();
+    save(); shareScore(s);
     return go('result', { sid: s.id, si: view.si, mi: view.mi, type: 'modulo', score, correct, clarity, unlocked, feedback: view.lastFeedback }, false);
   }
   st.exams.push({ type: view.type, date: Date.now(), score, correct, clarity });
@@ -826,7 +891,7 @@ function finishExam(s) {
     st.done = true; unlocked = true;
     if (s.current === view.si) s.current = Math.min(view.si + 1, s.stages.length - 1);
   }
-  save();
+  save(); shareScore(s);
   go('result', { sid: s.id, si: view.si, type: view.type, score, correct, clarity, unlocked }, false);
 }
 
