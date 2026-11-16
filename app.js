@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -56,11 +56,19 @@ async function askClaude(system, messages, maxTokens = 1200) {
   }
   return data.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
 }
+// Saca el JSON de la respuesta de Claude. Si vino cortado o raro, devuelve null (no rompe la app).
+function parseLoose(raw) {
+  const s = String(raw || '').replace(/```(json)?/g, '');
+  const a = s.search(/[{[]/), b = Math.max(s.lastIndexOf('}'), s.lastIndexOf(']'));
+  if (a < 0 || b <= a) return null;
+  try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; }
+}
 async function askJSON(system, user, maxTokens = 2000) {
   const raw = await askClaude(system + '\nDevolvé SOLO JSON válido, sin texto antes ni después, sin ```.', [{ role: 'user', content: user }], maxTokens);
-  const a = Math.min(...['{', '['].map((c) => raw.indexOf(c)).filter((i) => i >= 0));
-  const b = Math.max(raw.lastIndexOf('}'), raw.lastIndexOf(']'));
-  return JSON.parse(raw.slice(a, b + 1));
+  let j = parseLoose(raw);
+  if (j == null) j = parseLoose(await askClaude(system + '\nDevolvé SOLO JSON válido, sin texto antes ni después, sin ```.', [{ role: 'user', content: user }], maxTokens + 1500));
+  if (j == null) throw new Error('El profe se trabó un segundo. Tocá de nuevo el botón.');
+  return j;
 }
 const lengthRule = (short = settings.length === 'corto') => short
   ? 'Muy breve y directo: entre 35 y 60 palabras, frases cortas y simples, la idea principal y un ejemplo de una línea. Nada de relleno.'
@@ -692,15 +700,20 @@ const dramatic = (j) => { if (!j) return ''; const s = j.match(/[^.!?…]+[.!?�
 const turnText = (t) => [t.score != null ? scoreLine(t.score, t.lv) : '', dramatic(t.joke), t.gossip, t.feedback, t.explain, t.question].filter(Boolean).join(' ');
 async function learnTurn(s, st, m, text) {
   const keep = view;
+  if (view.busy) return; // evita que se pida dos veces lo mismo
+  view.busy = true;
   const status = document.getElementById('learnStatus'), send = document.getElementById('send');
   if (text != null) { view.turns.push({ role: 'me', text }); view.msgs.push({ role: 'user', content: text }); drawTurns(); }
   else view.msgs.push({ role: 'user', content: 'EMPEZAR' });
   status.classList.remove('hidden'); send.disabled = true; stopSpeaking();
   try {
     const sys = learnSystem(s, st, m) + `\nPaso actual: ${view.step} de ${STEPS}.`;
-    const raw = await askClaude(sys + '\nDevolvé SOLO JSON válido.', view.msgs, 600);
-    const j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
+    let raw = await askClaude(sys + '\nDevolvé SOLO JSON válido.', view.msgs, 1200);
+    let j = parseLoose(raw);
+    if (j == null && view === keep) { raw = await askClaude(sys + '\nDevolvé SOLO JSON válido, completo y cerrado, sin texto extra.', view.msgs, 2000); j = parseLoose(raw); }
     if (view !== keep) return;
+    if (j == null) throw new Error('El profe se trabó un segundo. Mandá tu respuesta de nuevo.');
+    view.busy = false;
     view.msgs.push({ role: 'assistant', content: raw });
     let turn;
     if (text == null) turn = { role: 'ai', explain: j.explain, question: j.question };
@@ -724,7 +737,10 @@ async function learnTurn(s, st, m, text) {
     if (turn.question) startCountdown(spoken, () => { const a = document.getElementById('ans'); if (!a || view !== keep) return; if (!a.value.trim()) a.value = 'No sé (se terminó el tiempo)'; document.getElementById('send').click(); });
   } catch (e) {
     if (view !== keep) return;
-    view.msgs.pop(); if (text != null) view.turns.pop(); drawTurns();
+    view.busy = false;
+    view.msgs.pop();
+    if (text != null) { view.turns.pop(); const a = document.getElementById('ans'); if (a && !a.value) a.value = text; }
+    drawTurns();
     status.classList.add('hidden'); send.disabled = false; alertBox(e.message);
   }
 }
@@ -964,7 +980,8 @@ async function sbRpc(fn, body) {
   if (!SB_URL) throw new Error('El ranking todavía no está conectado.');
   const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: { apikey: SB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
   if (!r.ok) throw new Error('No pude conectar con el ranking.');
-  return r.status === 204 ? null : r.json();
+  const txt = await r.text();
+  try { return txt ? JSON.parse(txt) : null; } catch { return null; }
 }
 const subjAvg = (s) => average(s.stages.map(stageScore).filter((x) => x != null));
 function shareScore(s) {
@@ -1013,8 +1030,8 @@ views.ranking = () => {
     let list;
     if (view.tab === 'general' || !view.tab) {
       const by = {};
-      rows.forEach((r) => { const k = r.player; (by[k] = by[k] || { name: r.name, me: r.me, xs: [] }).xs.push(r.avg); });
-      list = Object.values(by).map((p) => { const avg = average(p.xs); const l = levelOf(avg); return { ...p, avg, level: l[1], emoji: l[2], extra: `${p.xs.length} ${p.xs.length === 1 ? 'tema' : 'temas'}` }; });
+      rows.forEach((r) => { const k = r.player; (by[k] = by[k] || { name: r.name, me: r.me, xs: [], rs: [] }).xs.push(r.avg); by[k].rs.push(r); });
+      list = Object.values(by).map((p) => { const avg = average(p.xs); const l = p.rs.length === 1 ? [0, p.rs[0].level, p.rs[0].emoji] : levelOf(avg); return { ...p, avg, level: l[1], emoji: l[2], extra: `${p.xs.length} ${p.xs.length === 1 ? 'tema' : 'temas'}` }; });
     } else list = rows.filter((r) => r.topic === view.tab).map((r) => ({ ...r }));
     list.sort((a, b) => b.avg - a.avg);
     app.innerHTML = `
