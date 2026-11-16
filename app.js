@@ -4,6 +4,8 @@
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const APP_VERSION = 22;
+// Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
+const SB_URL = '', SB_KEY = '';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
 const tint = (i) => PALETTE[i % PALETTE.length];
 const PASS = 6; // nota mínima para aprobar el examen de etapa
@@ -286,6 +288,14 @@ function toast(msg) {
 }
 const listenBtn = (id) => `<button class="soft speak-btn" data-speak="${id}">▶ Escuchar</button>`;
 
+// ---------- Compartir: abre el menú del teléfono (WhatsApp, etc.) o copia el link ----------
+const APP_LINK = 'https://laplatatechos-prog.github.io/profe-de-voz/';
+async function shareApp(text) {
+  const msg = text || '¡Mirá esta app! Te enseña cualquier tema hablando, te toma examen y te dice qué bicho sos: del Musgo hasta Nivel Dios. ¿Te animás?';
+  try { if (navigator.share) { await navigator.share({ title: 'Profe de Voz', text: msg, url: APP_LINK }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(`${msg} ${APP_LINK}`); toast('Copié el link. Pegalo en WhatsApp o donde quieras.'); }
+  catch { prompt('Copiá este link:', APP_LINK); }
+}
 // ---------- Navegación ----------
 let view = { name: 'home' };
 const stack = [];
@@ -305,7 +315,7 @@ function setHeader(title) {
   document.getElementById('title').textContent = title;
   document.getElementById('backBtn').classList.toggle('hidden', view.name === 'home');
   document.getElementById('settingsBtn').classList.toggle('hidden', view.name === 'settings');
-  document.getElementById('rankBtn').classList.toggle('hidden', view.name !== 'home');
+  document.getElementById('rankBtn').classList.toggle('hidden', view.name !== 'home' || !SB_URL);
 }
 const views = {};
 function render() {
@@ -458,13 +468,14 @@ views.home = () => {
       <button id="topicGo" class="block" style="margin-top:10px">Empezar a estudiar →</button>
       <div id="homeStatus" class="muted small" style="margin-top:8px"></div>
     </div>
-    <button class="block rank-cta" id="toRank">🏆 Ver el ranking: ¿qué nivel tienen los demás?</button>
+    <div class="row share-row">${SB_URL ? '<button class="grow rank-cta" id="toRank">🏆 Ranking</button>' : ''}<button class="grow share-cta" id="shareBtn">📤 Compartir la app</button></div>
     <h2>Mis áreas</h2>
     ${items || '<p class="muted">Todavía no agregaste ninguna.</p>'}`;
   const ng = document.getElementById('nameGo');
   if (ng) { const ni = document.getElementById('nameInput'); ni.onkeydown = (e) => { if (e.key === 'Enter') ng.click(); };
     ng.onclick = () => { const n = ni.value.trim(); if (!n) return; settings.name = n; save(); render(); speak(`Hola ${n}, soy tu profe. ¿Qué querés aprender hoy?`); }; }
-  document.getElementById('toRank').onclick = () => go('ranking');
+  const tr = document.getElementById('toRank'); if (tr) tr.onclick = () => go('ranking');
+  document.getElementById('shareBtn').onclick = () => shareApp();
   const ts = document.getElementById('toSettings'); if (ts) ts.onclick = (e) => { e.preventDefault(); go('settings'); };
   app.querySelectorAll('[data-sid]').forEach((el) => el.onclick = () => go('subject', { sid: el.dataset.sid }));
   const inp = document.getElementById('topicInput');
@@ -814,7 +825,6 @@ const average = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.leng
 
 // ---------- Ranking compartido (Supabase, plan gratis) ----------
 // Esta clave es "publicable": está hecha para ir en la app. Solo deja usar las dos funciones del ranking.
-const SB_URL = '', SB_KEY = '';
 if (!settings.playerId) { settings.playerId = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)); save(); }
 if (settings.share == null) { settings.share = true; save(); }
 async function sbRpc(fn, body) {
@@ -919,14 +929,17 @@ views.result = () => {
           ${ok ? '' : '<button class="block result-btn" id="repeat">↻ Repetir módulo</button>'}
           ${!lastMod ? `<button class="block result-btn ${ok ? '' : 'ghost'}" id="nextMod">Siguiente módulo →</button>` : ''}
           ${ok ? `<button class="block result-btn ${lastMod ? '' : 'ghost'}" id="repeat">↻ Repetir módulo</button>` : ''}
+          <button class="block result-btn ghost" id="shareLvl">📤 Compartir mi nivel</button>
           <button class="block result-btn ghost" id="toSubj">Volver al temario</button>` : `
           <button class="block result-btn" id="toSubj">Volver al temario</button>
-          <button class="block result-btn ghost" id="again">Elegir otro examen</button>`}
+          <button class="block result-btn ghost" id="again">Elegir otro examen</button>
+          <button class="block result-btn ghost" id="shareLvl">📤 Compartir mi nivel</button>`}
       </div>
     </div>`;
   speak(`${scoreLine(view.score, view.lv)} ${view.joke} ${view.feedback || ''} ${msg}`);
   if (ok) confetti();
   document.getElementById('toSubj').onclick = () => { stack.length = 0; view = { name: 'home' }; go('subject', { sid: s.id }); };
+  document.getElementById('shareLvl').onclick = () => shareApp(`${settings.name ? settings.name + ' sacó' : 'Saqué'} ${fmt(view.score)} en ${s.topic}: ${view.lv.sos.replace(/^Sos/, settings.name ? 'es' : 'soy')} ${view.lv.emoji}. ¿Te animás a superarlo? Probá la app:`);
   const ag = document.getElementById('again'); if (ag) ag.onclick = () => go('examMenu', { sid: s.id, si: view.si }, false);
   const nm = document.getElementById('nextMod'); if (nm) nm.onclick = () => go('module', { sid: s.id, si: view.si, mi: view.mi + 1 }, false);
   const rp = document.getElementById('repeat'); if (rp) rp.onclick = () => go('module', { sid: s.id, si: view.si, mi: view.mi }, false);
