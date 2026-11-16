@@ -198,10 +198,14 @@ views.home = () => {
   const items = subjects.map((s) => {
     const done = s.stages.filter((x) => x.done).length;
     const avg = average(s.stages.flatMap((x) => x.exams.map((e) => e.score)));
+    const scored = s.stages.filter((x) => x.exams.length);
+    const rows = scored.map((x) => { const best = Math.max(...x.exams.map((e) => e.score));
+      return `<div class="between score-row"><span>${esc(x.title)}</span><span class="pill ${best >= PASS ? 'ok' : 'bad'}">${fmt(best)}</span></div>`; }).join('');
     return `<div class="card tap" data-sid="${s.id}">
-      <div class="between"><b>${esc(s.topic)}</b>${avg != null ? `<span class="pill ${avg >= PASS ? 'ok' : 'bad'}">Promedio ${avg.toFixed(1)}</span>` : ''}</div>
-      <div class="muted small">${done} de ${s.stages.length} etapas aprobadas</div>
-      <div class="bar"><div style="width:${(100 * done) / s.stages.length}%"></div></div></div>`;
+      <div class="between"><b>${esc(s.topic)}</b>${avg != null ? `<span class="pill ${avg >= PASS ? 'ok' : 'bad'}">Promedio ${fmt(avg)}</span>` : ''}</div>
+      <div class="bar"><div style="width:${(100 * done) / s.stages.length}%"></div></div>
+      <div class="muted small" style="margin-top:6px">Aprendiste ${done} de ${s.stages.length} etapas${scored.length ? ` · ${((n) => n + (n === 1 ? ' examen rendido' : ' exámenes rendidos'))(s.stages.reduce((n, x) => n + x.exams.length, 0))}` : ' · todavía sin exámenes'}</div>
+      ${rows ? `<div class="score-list">${rows}</div>` : ''}</div>`;
   }).join('');
   app.innerHTML = `
     ${!settings.key ? `<div class="card" style="background:var(--accent-soft);border-color:transparent">Para empezar, cargá tu clave de Claude en <a href="#" id="toSettings">Configuración</a>.</div>` : ''}
@@ -253,7 +257,7 @@ views.subject = () => {
       return `<div class="card ${state}">
         <div class="stage-head tap" data-toggle="${i}"><div class="num">${st.done ? '✓' : i + 1}</div>
           <div class="grow" style="flex:1"><b>${esc(st.title)}</b><div class="muted small">${esc(st.summary)}${state === 'locked' ? ' · 🔒 Se habilita al aprobar la anterior' : ''}</div></div>
-          ${best != null ? `<span class="pill ${best >= PASS ? 'ok' : 'bad'}">${best.toFixed(1)}</span>` : ''}</div>
+          ${best != null ? `<span class="pill ${best >= PASS ? 'ok' : 'bad'}">${fmt(best)}</span>` : ''}</div>
         ${open && state !== 'locked' ? `
           <div class="modules">${(st.modules || []).map((m, k) => `<div class="mod ${m.seen ? 'seen' : ''}" data-mod="${i}:${k}"><span class="dot"></span><span>${esc(m.title)}</span></div>`).join('')}
             ${!st.modules || !st.modules.length ? '<div class="muted small">Tocá "Empezar" para armar los módulos.</div>' : ''}</div>
@@ -376,8 +380,8 @@ views.examMenu = () => {
     <p class="muted small">Respondé escribiendo o dictando con el teclado. Cada respuesta tiene dos notas del 1 al 10: <b>corrección</b> (si está bien) y <b>claridad</b> (si se entiende cómo lo explicás).</p>
     ${Object.entries(EXAMS).map(([k, e]) => `<button class="exam-type" data-type="${k}"><b>${e.name}</b><span>${e.desc}</span></button>`).join('')}
     ${st.exams.length ? `<h2>Tus notas en esta etapa</h2>${st.exams.slice().reverse().map((e) => `
-      <div class="card between"><div><b>${esc(EXAMS[e.type]?.name || e.type)}</b><div class="muted small">${new Date(e.date).toLocaleDateString('es-AR')} · corrección ${e.correct.toFixed(1)} · claridad ${e.clarity.toFixed(1)}</div></div>
-      <span class="pill ${e.score >= PASS ? 'ok' : 'bad'}">${e.score.toFixed(1)}</span></div>`).join('')}` : ''}`;
+      <div class="card between"><div><b>${esc(EXAMS[e.type]?.name || e.type)}</b><div class="muted small">${new Date(e.date).toLocaleDateString('es-AR')} · corrección ${fmt(e.correct)} · claridad ${fmt(e.clarity)}</div></div>
+      <span class="pill ${e.score >= PASS ? 'ok' : 'bad'}">${fmt(e.score)}</span></div>`).join('')}` : ''}`;
   app.querySelectorAll('[data-type]').forEach((el) => el.onclick = () => startExam(s, view.si, el.dataset.type, el));
 };
 
@@ -461,25 +465,26 @@ function finishExam(s) {
 }
 
 views.result = () => {
-  const s = getSubj(), cfg = EXAMS[view.type], ok = view.score >= PASS;
+  const s = getSubj(), st = s.stages[view.si], cfg = EXAMS[view.type], ok = view.score >= PASS;
   setHeader('Resultado');
-  const msg = ok ? (view.unlocked ? '¡Aprobaste! Se habilitó la etapa siguiente.' : '¡Muy bien!') : 'Todavía no. Repasá los módulos y probá de nuevo.';
+  const msg = ok ? (view.unlocked ? '¡Aprobaste! Se habilitó la etapa siguiente.' : view.score >= 8 ? '¡Excelente!' : '¡Muy bien!') : 'Todavía no. Repasá los módulos y probá de nuevo.';
   app.innerHTML = `
-    <div class="card" style="text-align:center;padding:28px 16px">
-      <div class="muted">${esc(cfg.name)}</div>
-      <div class="score-big" style="font-size:64px;margin:8px 0;color:${ok ? 'var(--ok)' : 'var(--bad)'}">${view.score.toFixed(1)}</div>
-      <div>${msg}</div>
-    </div>
-    <div class="scores">
-      <div class="card"><div class="muted small">Corrección</div><div class="score-big">${view.correct.toFixed(1)}</div></div>
-      <div class="card"><div class="muted small">Claridad</div><div class="score-big">${view.clarity.toFixed(1)}</div></div>
-    </div>
-    <button class="block" id="toSubj">Volver al temario</button>
-    <button class="block soft" id="again" style="margin-top:10px">Elegir otro examen</button>`;
-  speak(`Tu nota es ${view.score.toFixed(1).replace('.', ',')}. ${msg}`);
+    <div class="result-screen ${ok ? 'pass' : 'fail'}">
+      <div class="result-inner">
+        <div class="result-topic">${esc(cfg.name)} · ${esc(st.title)}</div>
+        <div class="result-label">Te sacaste</div>
+        <div class="result-num">${fmt(view.score)}</div>
+        <div class="result-msg">${msg}</div>
+        <div class="result-sub"><span>Corrección <b>${fmt(view.correct)}</b></span><span>Claridad <b>${fmt(view.clarity)}</b></span></div>
+        <button class="block result-btn" id="toSubj">Volver al temario</button>
+        <button class="block result-btn ghost" id="again">Elegir otro examen</button>
+      </div>
+    </div>`;
+  speak(`Te sacaste ${fmt(view.score)}. ${msg}`);
   document.getElementById('toSubj').onclick = () => { stack.length = 0; view = { name: 'home' }; go('subject', { sid: s.id }); };
   document.getElementById('again').onclick = () => go('examMenu', { sid: s.id, si: view.si }, false);
 };
+const fmt = (n) => (Math.round(n * 10) / 10).toString().replace('.', ',');
 
 // ---------- Arranque ----------
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
