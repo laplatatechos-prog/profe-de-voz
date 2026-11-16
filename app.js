@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 12;
+const APP_VERSION = 13;
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
 const tint = (i) => PALETTE[i % PALETTE.length];
 const PASS = 6; // nota mínima para aprobar el examen de etapa
@@ -623,28 +623,24 @@ views.exam = () => {
     } catch (e) { send.disabled = false; document.getElementById('examStatus').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
   };
 };
-// Un nivel chistoso para cada nota del 0 al 10.
+// Niveles chistosos (de menor a mayor). "min" = nota mínima para llegar a ese nivel.
 const LEVELS = [
-  ['Nivel Zombie', '🧟'], ['Nivel Piedra', '🪨'], ['Nivel Dormilón', '😴'], ['Nivel Papa Tibia', '🥔'],
-  ['Nivel Tortuga', '🐢'], ['Nivel Casi Casi', '🤏'], ['Nivel Aprendiz Ninja', '🥷'], ['Nivel Crack', '😎'],
-  ['Nivel Genio', '🧠'], ['Nivel Leyenda', '🦸'], ['Nivel Dios', '⚡'],
+  { min: 0, name: 'Nivel Zombie', emoji: '🧟', jokes: ['Caminás, pero no pensás. ¡Dale que te revivimos!', 'Hasta los zombies piden cerebros… vos ni eso. ¡Otra vuelta!'] },
+  { min: 1, name: 'Nivel Musgo', emoji: '🌿', jokes: ['Estás verde y quietito, pegado a la piedra. ¡A moverse!', 'El musgo crece despacito… pero crece. ¡Vos también!'] },
+  { min: 2, name: 'Nivel Plancton', emoji: '🦠', jokes: ['Sos chiquitito, pero las ballenas comen de vos. ¡Algo es algo!', 'Flotás en el océano del conocimiento sin rumbo. ¡Nadá un poquito!'] },
+  { min: 3, name: 'Nivel Larvoide', emoji: '🐛', jokes: ['Todavía sos larva, pero ojo que de acá sale mariposa.', 'Te arrastrás, pero vas para adelante. ¡Un repaso y te salen alas!'] },
+  { min: 4, name: 'Nivel Araña de rincón', emoji: '🕷️', jokes: ['Escondida en el rincón, sin hacer ruido… ¡salí a la luz!', 'Ya tejiste algo de telaraña, falta que se pegue el conocimiento.'] },
+  { min: 5, name: 'Nivel Cuadrúpedo', emoji: '🐕', jokes: ['Caminás en cuatro patas, pero ya caminás. ¡Falta pararse!', 'Firme en cuatro patas. Un empujoncito y te ponés en dos.'] },
+  { min: 6, name: 'Nivel Cachalote bípedo', emoji: '🐋', jokes: ['Un cachalote caminando en dos patas: raro, pero aprobaste.', 'Sos enorme y raro, pero avanzás. ¡Así se hace!'] },
+  { min: 7, name: 'Nivel Presidente de país del tercer mundo', emoji: '🎩', jokes: ['Prometés mucho y cumplís bastante. ¡Más que muchos presidentes!', 'Ya tenés banda presidencial. Ahora no te endeudes con el FMI.'] },
+  { min: 7.8, name: 'Nivel Homo erectus', emoji: '🦍', jokes: ['Ya caminás derechito y descubriste el fuego. ¡Bien ahí!', 'Postura erguida y mente despierta. La evolución te sonríe.'] },
+  { min: 8.5, name: 'Nivel Homo sapiens', emoji: '🧑', jokes: ['Sapiens: el que sabe. Y se nota.', 'Felicitaciones, evolucionaste. Darwin estaría orgulloso.'] },
+  { min: 9.2, name: 'Nivel Ninja supremo', emoji: '🥷', jokes: ['Respondiste tan rápido y preciso que nadie te vio venir.', 'Cinturón negro en este tema. El examen ni se dio cuenta.'] },
+  { min: 9.8, name: 'Nivel Dios', emoji: '⚡', jokes: ['Nivel Dios: el examen te pidió disculpas por molestarte.', 'Ya no estudiás el tema: el tema te estudia a vos.'] },
 ];
-// Un chiste por nivel (se elige uno al azar).
-const JOKES = [
-  ['Tu cerebro está en modo zombie: camina, pero no piensa. ¡Dale que lo revivimos!', 'Hasta un zombie sabe más que esto… bueno, no, pero casi. ¡Otra vez!'],
-  ['Una piedra respondió igual que vos, y eso que no fue a clase.', 'Firme como una roca… y con la misma cantidad de respuestas.'],
-  ['¿Estabas soñando con el examen? Despertate que vamos de nuevo.', 'Respondiste con los ojos cerrados, se nota. ¡Café y otra vuelta!'],
-  ['Papa tibia: no quema, pero tampoco alimenta. ¡A calentarla!', 'Ni frita ni hervida: papa tibia. Un repaso y salís puré de crack.'],
-  ['Lento pero seguro, como la tortuga… pero la tortuga ganó la carrera. ¡Vos también podés!', 'Vas a paso de tortuga, pero con caparazón firme. ¡Un empujoncito más!'],
-  ['Casi casi… como cuando casi agarrás el colectivo. ¡Corré un poco más!', 'Estuviste a un pelito. Literal, un pelito. ¡Otra y aprobás!'],
-  ['Aprendiz ninja: ya sabés esconderte de los errores, falta pegar la patada final.', 'Tenés el cinturón blanco… y ya se te ve el amarillo asomando.'],
-  ['Crack total. Si seguís así te van a pedir autógrafos en el colectivo.', 'Nivel crack: hasta el profe tomó nota.'],
-  ['Nivel genio: tu cerebro pidió aumento de sueldo.', 'Tan genio que la lámpara te pide deseos a vos.'],
-  ['Leyenda: van a contar historias de este examen en las fogatas.', 'Nivel leyenda. Ya te están haciendo una estatua, tranqui.'],
-  ['Nivel Dios: el examen te pidió disculpas por molestarte.', 'Nivel Dios. Ya no estudiás el tema: el tema te estudia a vos.'],
-];
-const jokeFor = (n) => { const j = JOKES[Math.max(0, Math.min(10, Math.floor(n)))]; return j[Math.floor(Math.random() * j.length)]; };
-const levelOf = (n) => { const [name, emoji] = LEVELS[Math.max(0, Math.min(10, Math.floor(n)))]; return [n, name, emoji]; };
+const levelFor = (n) => [...LEVELS].reverse().find((l) => n >= l.min) || LEVELS[0];
+const jokeFor = (n) => { const j = levelFor(n).jokes; return j[Math.floor(Math.random() * j.length)]; };
+const levelOf = (n) => { const l = levelFor(n); return [n, l.name, l.emoji]; };
 const modBest = (m) => (m.scores && m.scores.length ? Math.max(...m.scores) : null);
 function stageScore(st) {
   const xs = (st.modules || []).map(modBest).filter((x) => x != null).concat(st.exams.map((e) => e.score));
