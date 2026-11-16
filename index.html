@@ -251,6 +251,15 @@
 .duel-dots i.ok{background:#2fb380}.duel-dots i.bad{background:#e05555}.duel-dots i.wait{background:#f6c344}
 .duel-q{min-height:90px;display:flex;align-items:center}
 #dans{width:100%;font:inherit;font-size:18px;padding:12px;border-radius:12px;border:2px solid #ddd;box-sizing:border-box}
+.duel-new{border:2px solid #ff8a3d;background:#fff6ee}
+.duel-badge{font-weight:800;color:#e0631a;margin-bottom:6px}
+.rank-cta{position:relative}.rank-cta[data-badge]::after{content:attr(data-badge);position:absolute;top:-6px;right:-6px;background:#e53935;color:#fff;border-radius:999px;min-width:22px;height:22px;font-size:13px;display:grid;place-items:center;font-weight:800;animation:bounceIn .5s}
+.chat-box{background:#fff;border-radius:16px;border:2px solid #eee;padding:10px;height:calc(100vh - 260px);min-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.chat-msg{max-width:80%;align-self:flex-start;background:#f2f0ff;border-radius:14px 14px 14px 4px;padding:7px 11px;display:flex;flex-direction:column;font-size:15px;word-wrap:break-word}
+.chat-msg.me{align-self:flex-end;background:var(--accent);color:#fff;border-radius:14px 14px 4px 14px}
+.chat-msg b{font-size:12px;color:var(--accent)}.chat-msg i{font-style:normal;font-size:11px;opacity:.6;align-self:flex-end}
+.chat-msg.me a{color:#fff}
+.chat-send{display:flex;gap:8px;margin-top:8px}.chat-send input{flex:1;font:inherit;font-size:16px;padding:12px;border-radius:12px;border:2px solid #ddd;min-width:0}
 </style>
 </head>
 <body>
