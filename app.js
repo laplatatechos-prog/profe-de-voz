@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 32;
+const APP_VERSION = 33;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -834,7 +834,7 @@ async function learnTurn(s, st, m, text) {
         return finishExam(s);
       }
       const lv = pickLevel(score);
-      turn = { role: 'ai', score, lv, joke: lv.joke, gossip: gossip(), feedback: j.feedback, explain: j.explain, question: j.question };
+      turn = { role: 'ai', score, lv, joke: lv.joke, gossip: '', feedback: j.feedback, explain: j.explain, question: j.question };
     }
     view.turns.push(turn);
     render();
@@ -1290,8 +1290,17 @@ async function rankingRows() {
 const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
 // Solo cuando hay NOVEDAD de otra persona (tema nuevo, nota nueva o cambio de nivel). Cada novedad se cuenta una vez.
 let seenGossip = store.get('profe-chismes', null);
+// Las novedades de otros se cuentan de vez en cuando: solo al terminar un examen, como mucho 1 vez cada 20 minutos
+// y no siempre (1 de cada 3, más o menos). Lo que no se cuenta queda guardado para otra vez.
 function gossip() {
   rankingRows().catch(() => {});
+  const last = store.get('profe-chisme-at', 0);
+  if (Date.now() - last < 20 * 60 * 1000 || Math.random() > 0.35) return '';
+  const said = gossipNow();
+  if (said) store.set('profe-chisme-at', Date.now());
+  return said;
+}
+function gossipNow() {
   const rows = rankCache; if (!rows) return '';
   const me = 'che';
   const others = rows.filter((r) => !r.me);
@@ -1307,18 +1316,33 @@ function gossip() {
   const n = o.name, tp = o.topic, L = o.level, a = o.avg != null ? fmt(o.avg) : null;
   const mine = rows.find((r) => r.me && r.topic === tp && r.avg != null);
   const prevAvg = before && before.split('|')[0] !== '-' ? +before.split('|')[0] : null;
-  if (a == null) return pickOne([
-    `Te cuento una cosa, pero no te quiero decir nada… ${n} empezó a estudiar ${tp}. Todavía no rindió nada. Se hace el misterioso. Yo no te dije nada, ¿eh?`,
-    `Psst… no sé si debería contarte esto. ${n} arrancó con ${tp}. Viene con todo, o eso dice. Vos hacete el que no sabe.`,
-  ]);
-  if (prevAvg != null && o.avg > prevAvg) return `No te quiero decir nada, pero… ${n} subió en ${tp}. Ahora tiene ${a} y está en el ${L}. Se está poniendo las pilas. Yo no te dije nada, ¿eh?`;
-  if (prevAvg != null && o.avg < prevAvg) return `Esto queda entre nosotros… ${n} bajó un poquito en ${tp}. Ahora tiene ${a}, en el ${L}. Pobre, pasale un mate. Pero yo no te conté nada.`;
-  if (mine && o.avg > mine.avg) return `Che, te cuento una cosa, pero no te quiero decir nada… ${n} ya está en el ${L} en ${tp}, con ${a}. Y vos ahí, en el ${mine.level}… Yo no te dije nada, ¿eh?`;
-  if (mine && o.avg < mine.avg) return `Shh, esto no te lo dije yo… en ${tp} le estás ganando a ${n}, que está en el ${L} con ${a}. Hacete el humilde, ¿eh?`;
-  return pickOne([
-    `Te cuento una cosa, pero no te quiero decir nada… ${n} está estudiando ${tp} y ya sacó ${a}. Está en el ${L}. Yo no te dije nada, ¿eh?`,
-    `Psst… me dijeron por ahí que ${n} anda con ${tp}. Sacó ${a} y quedó en el ${L}. Ya se la cree, ¿viste? Pero no te dije nada.`,
-  ]);
+  let fact;
+  if (a == null) fact = pickOne([`${n} empezó a estudiar ${tp}. Todavía no rindió nada. Se hace el misterioso.`, `${n} arrancó con ${tp}. Viene con todo, o eso dice.`]);
+  else if (prevAvg != null && o.avg > prevAvg) fact = `${n} subió en ${tp}. Ahora tiene ${a} y está en el ${L}. Se está poniendo las pilas.`;
+  else if (prevAvg != null && o.avg < prevAvg) fact = `${n} bajó un poquito en ${tp}. Ahora tiene ${a}, en el ${L}. Pobre, pasale un mate.`;
+  else if (mine && o.avg > mine.avg) fact = `${n} ya está en el ${L} en ${tp}, con ${a}. Y vos ahí, en el ${mine.level}…`;
+  else if (mine && o.avg < mine.avg) fact = `en ${tp} le estás ganando a ${n}, que está en el ${L} con ${a}. Hacete el humilde.`;
+  else fact = pickOne([`${n} está estudiando ${tp} y ya sacó ${a}. Está en el ${L}.`, `${n} anda con ${tp}. Sacó ${a} y quedó en el ${L}. Ya se la cree, ¿viste?`]);
+  return `${rotPick('open', GOSSIP_OPEN)} ${fact} ${rotPick('close', GOSSIP_CLOSE)}`;
+}
+// Distintas formas de arrancar y cerrar la confidencia; rotan sin repetirse hasta usarlas todas.
+const GOSSIP_OPEN = [
+  'Te cuento una cosa, pero no te quiero decir nada…', 'Psst… no sé si debería contarte esto, pero…', 'Esto queda entre nosotros, ¿eh?…',
+  'Shh, acercate que nadie escuche…', 'Me llegó un rumor… no sé si es cierto, pero…', 'No es que yo ande hablando de los demás, pero…',
+  'Mirá, yo no soy de contar cosas, pero…', 'Un pajarito me contó que…', 'Te lo digo bajito, porque si se entera…',
+  'Ay, no te puedo contar… bueno, te cuento:', 'No lo vas a creer, pero…', 'Agarrate de la silla:',
+];
+const GOSSIP_CLOSE = [
+  'Yo no te dije nada, ¿eh?', 'Vos hacete el que no sabe.', 'Pero de mí no salió.', 'Borrá esto de tu memoria.',
+  'Si te preguntan, yo estaba durmiendo.', 'Y no me mires así, que yo solo informo.', 'Ni una palabra a nadie.', 'Shh… seguimos con lo nuestro.',
+];
+function rotPick(key, list) {
+  const st = store.get('profe-chisme-rot', {});
+  let bag = (st[key] || []).filter((x) => list.includes(x));
+  if (!bag.length) bag = list.slice();
+  const x = bag[Math.floor(Math.random() * bag.length)];
+  st[key] = bag.filter((y) => y !== x); store.set('profe-chisme-rot', st);
+  return x;
 }
 const medal = (i) => ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
 views.ranking = () => {
