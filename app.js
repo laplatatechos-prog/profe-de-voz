@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 27;
+const APP_VERSION = 28;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -33,8 +33,21 @@ for (const s of subjects) {
 
 // ---------- Claude ----------
 async function askClaude(system, messages, maxTokens = 1200) {
-  if (!settings.key) throw new Error('Primero cargá tu clave de Claude en Configuración (⚙︎ arriba a la derecha).');
   let res;
+  if (!settings.key) { // sin clave propia: pasa por el servidor, que usa la clave del administrador
+    try {
+      res = await fetch(`${SB_URL}/functions/v1/claude`, { method: 'POST', headers: { 'content-type': 'application/json', apikey: SB_KEY },
+        body: JSON.stringify({ player: settings.playerId, model: MODEL, max_tokens: maxTokens, system, messages }) });
+    } catch { throw new Error('No hay conexión a internet.'); }
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const code = d?.error?.code;
+      if (code === 'pending' || code === 'rejected' || code === 'no_member') { settings.access = { status: code === 'no_member' ? 'none' : code }; save(); setTimeout(render, 50); }
+      if (/credit/i.test(d?.error?.message || '')) throw new Error('La cuenta de Claude del administrador se quedó sin crédito. Avisale.');
+      throw new Error(d?.error?.message || 'No pude hablar con el profe. Probá de nuevo.');
+    }
+    return (d.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+  }
   try {
     res = await fetch(API_URL, {
       method: 'POST',
@@ -412,7 +425,10 @@ function setHeader(title) {
   document.getElementById('rankBtn').classList.toggle('hidden', view.name !== 'home' || !SB_URL);
 }
 const views = {};
+// Sin clave propia y sin aprobación del administrador: solo se ve la pantalla de pedir acceso.
+const needsAccess = () => !settings.key && !(settings.access && settings.access.status === 'approved');
 function render() {
+  if (needsAccess() && !['access', 'settings'].includes(view.name)) view = { name: 'access' };
   (views[view.name] || views.home)();
   document.body.classList.toggle('has-answer', view.name === 'module' || view.name === 'exam');
   app.classList.remove('enter'); void app.offsetWidth; app.classList.add('enter'); // animación de entrada
@@ -474,12 +490,22 @@ views.settings = () => {
 
     <h2>Tu nombre</h2>
     <div class="card"><div class="row"><input class="grow" id="nameSet" placeholder="Tu nombre" value="${esc(settings.name || '')}"><button class="soft" id="nameSave">Guardar</button></div></div>
-    <h2>Clave de Claude</h2>
+    ${settings.key || (settings.access && settings.access.is_admin) ? `<h2>Clave de Claude</h2>
     <div class="card">
       <p class="muted" style="margin-top:0">Se guarda solo en este equipo.</p>
       <input id="keyInput" type="password" placeholder="sk-ant-..." autocomplete="off" value="${esc(settings.key)}">
       <div class="row" style="margin-top:10px"><button id="saveKey">Guardar</button><span id="keyMsg" class="muted"></span></div>
       <p class="muted small">Para sacarla: platform.claude.com → Claves (API Keys) → Crear clave. Empieza con sk-ant-.</p>
+    </div>` : ''}
+    <h2>Administrador</h2>
+    <div class="card">
+      ${settings.access && settings.access.is_admin ? `<p style="margin-top:0">👑 Sos el administrador.</p>
+        <button class="block" id="toAdmin">Ver solicitudes y personas</button>
+        ${settings.key ? `<button class="soft block" id="pushKey" style="margin-top:10px">🔑 Usar mi clave para todos (se guarda solo en el servidor)</button>` : ''}
+        <div id="adminMsg" class="muted small" style="margin-top:8px">${settings.access.has_key ? '✓ La clave ya está guardada en el servidor.' : 'Falta guardar tu clave en el servidor.'}</div>`
+      : `<p class="muted small" style="margin-top:0">Solo para quien maneja la app.</p>
+        <div class="row"><input class="grow" id="adminCode" placeholder="Código de administrador" autocomplete="off"><button class="soft" id="adminGo">Entrar</button></div>
+        <div id="adminMsg" class="muted small" style="margin-top:8px"></div>`}
     </div>
     <h2>Borrar</h2>
     <div class="card">
@@ -527,7 +553,19 @@ views.settings = () => {
     if (!confirm('¿Seguro que querés borrar todas las áreas y puntajes? No se puede deshacer.')) return;
     subjects = []; save(); stack.length = 0; view = { name: 'home' }; render(); toast('Listo, se borró todo.');
   };
-  $('saveKey').onclick = async () => {
+  if ($('adminGo')) $('adminGo').onclick = async () => {
+    $('adminMsg').textContent = 'Revisando…';
+    const ok = await sbRpc('claim_admin', { p_player: settings.playerId, p_name: settings.name || 'Admin', p_code: $('adminCode').value }).catch(() => false);
+    if (!ok) { $('adminMsg').innerHTML = '<span class="err">Código incorrecto.</span>'; return; }
+    if (settings.key) await sbRpc('admin_set_key', { p_player: settings.playerId, p_key: settings.key }).catch(() => {});
+    await refreshAccess(); toast('👑 Listo, sos el administrador.'); render();
+  };
+  if ($('toAdmin')) $('toAdmin').onclick = () => go('admin');
+  if ($('pushKey')) $('pushKey').onclick = async () => {
+    const ok = await sbRpc('admin_set_key', { p_player: settings.playerId, p_key: settings.key }).catch(() => false);
+    await refreshAccess(); $('adminMsg').textContent = ok ? '✓ Clave guardada en el servidor. Los aprobados ya pueden usar la app.' : 'No se pudo guardar.';
+  };
+  if ($('saveKey')) $('saveKey').onclick = async () => {
     settings.key = $('keyInput').value.trim(); save();
     $('keyMsg').textContent = 'Probando…';
     try { await askClaude('Respondé solo "ok".', [{ role: 'user', content: 'hola' }], 10); $('keyMsg').textContent = '✓ Funciona'; setTimeout(back, 700); }
@@ -552,7 +590,6 @@ views.home = () => {
       ${rows ? `<div class="score-list">${rows}</div>` : ''}</div>`;
   }).join('');
   app.innerHTML = `
-    ${!settings.key ? `<div class="card" style="background:var(--accent-soft);border-color:transparent">Para empezar, cargá tu clave de Claude en <a href="#" id="toSettings">Configuración</a>.</div>` : ''}
     ${!settings.name ? `<div class="card name-card"><b>👋 ¡Hola! ¿Cómo te llamás?</b>
       <div class="row" style="margin-top:10px"><input class="grow" id="nameInput" placeholder="Tu nombre"><button id="nameGo">Listo</button></div></div>`
       : `<div class="hello">Hola, ${esc(settings.name)} 👋</div>`}
@@ -973,9 +1010,92 @@ function stageScore(st) {
 const clamp = (n) => Math.max(1, Math.min(10, Math.round(+n || 1)));
 const average = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 
+// ---------- Acceso: pedir permiso al administrador ----------
+async function refreshAccess() {
+  try {
+    const rows = await sbRpc('my_status', { p_player: settings.playerId });
+    const a = rows && rows[0];
+    if (a) { settings.access = { status: a.status, is_admin: a.is_admin, has_key: a.has_key }; save(); }
+  } catch {}
+  return settings.access;
+}
+views.access = () => {
+  setHeader('Profe de Voz');
+  const st = (settings.access && settings.access.status) || 'none';
+  const name = settings.name || '';
+  app.innerHTML = `
+    <div class="card ask-card" style="text-align:center">
+      <div style="font-size:64px">${st === 'pending' ? '⏳' : st === 'rejected' ? '🚫' : '👋'}</div>
+      ${st === 'pending' ? `<div class="ask-q">¡Listo, ${esc(name)}! Tu pedido está esperando</div>
+          <p class="muted">El administrador tiene que aprobarte. Avisale por WhatsApp así lo ve rápido.</p>
+          <button class="block" id="nudge">💬 Avisarle que pedí entrar</button>
+          <button class="soft block" id="recheck" style="margin-top:10px">🔄 Ya me aprobó, revisar</button>`
+      : st === 'rejected' ? `<div class="ask-q">Tu pedido no fue aprobado</div>
+          <p class="muted">Si creés que es un error, hablá con el administrador y volvé a pedirlo.</p>
+          <button class="block" id="ask">Pedir acceso de nuevo</button>`
+      : `<div class="ask-q">Para entrar, pedile permiso al administrador</div>
+          <p class="muted">Escribí tu nombre y mandale la solicitud. Cuando te apruebe, ya podés estudiar.</p>
+          <input id="accName" class="ask-input" placeholder="Tu nombre" value="${esc(name)}">
+          <button class="block" id="ask" style="margin-top:10px">🙋 Pedir acceso</button>`}
+      <div id="accMsg" class="muted small" style="margin-top:10px"></div>
+    </div>
+    <p class="muted small" style="text-align:center">¿Sos el administrador? Entrá en <a href="#" id="accAdmin">Configuración</a>.</p>`;
+  const $ = (id) => document.getElementById(id);
+  $('accAdmin').onclick = (e) => { e.preventDefault(); go('settings'); };
+  if ($('ask')) $('ask').onclick = async () => {
+    const n = ($('accName') ? $('accName').value : settings.name || '').trim();
+    if (!n) { $('accMsg').textContent = 'Escribí tu nombre primero.'; return; }
+    settings.name = n; save(); $('accMsg').textContent = 'Enviando…';
+    try { const s = await sbRpc('request_access', { p_player: settings.playerId, p_name: n }); settings.access = { status: s || 'pending' }; save(); render(); }
+    catch { $('accMsg').textContent = 'No pude enviar el pedido. ¿Tenés internet?'; }
+  };
+  if ($('recheck')) $('recheck').onclick = async () => {
+    $('accMsg').textContent = 'Revisando…';
+    await refreshAccess();
+    if (settings.access && settings.access.status === 'approved') { toast('¡Te aprobaron! 🎉'); view = { name: 'home' }; render(); }
+    else $('accMsg').textContent = 'Todavía no. Probá en un ratito.';
+  };
+  if ($('nudge')) $('nudge').onclick = () => shareApp(`Hola, soy ${settings.name}. Te mandé una solicitud para entrar a Profe de Voz. ¿Me aprobás?`);
+};
+views.admin = () => {
+  setHeader('Administrador');
+  const draw = () => {
+    const rows = view.rows || [];
+    const label = { pending: '⏳ Esperando', approved: '✅ Aprobado', rejected: '🚫 Rechazado' };
+    app.innerHTML = `
+      <div class="card ask-card"><div class="ask-q">👑 Solicitudes y personas</div>
+        <div class="muted small">Cada persona aprobada usa tu clave desde el servidor. Cada respuesta del profe es 1 consulta. Podés cambiar el límite diario de cada uno.</div></div>
+      ${view.err ? `<div class="card err">${esc(view.err)}</div>` : !view.rows ? '<p class="muted">Cargando…</p>' : !rows.length ? '<p class="muted">Todavía nadie pidió entrar.</p>'
+        : rows.map((m) => `<div class="card">
+            <div class="between"><b>${esc(m.name)}${m.is_admin ? ' 👑' : ''}</b><span class="small">${label[m.status] || m.status}</span></div>
+            <div class="muted small">Hoy: ${m.used_today}${m.is_admin ? '' : ` de ${m.daily_limit}`} consultas · En total: ${m.total_used} · Pidió el ${new Date(m.created_at).toLocaleDateString('es-AR')}</div>
+            ${m.is_admin ? '' : `<div class="row" style="margin-top:8px;gap:8px;align-items:center"><span class="small">Límite por día:</span><input type="number" min="0" max="5000" value="${m.daily_limit}" data-lim="${m.player}" style="width:90px"><button class="soft" data-limsave="${m.player}">Guardar</button></div>`}
+            ${m.is_admin ? '' : `<div class="row" style="margin-top:10px;gap:8px">
+              ${m.status !== 'approved' ? `<button class="grow" data-ok="${m.player}">✅ Aprobar</button>` : ''}
+              ${m.status !== 'rejected' ? `<button class="grow ghost" data-no="${m.player}">🚫 ${m.status === 'approved' ? 'Quitar acceso' : 'Rechazar'}</button>` : ''}</div>`}
+          </div>`).join('')}
+      <button class="soft block" id="reload">🔄 Actualizar</button>`;
+    const set = async (target, status) => { await sbRpc('admin_set_status', { p_player: settings.playerId, p_target: target, p_status: status }).catch(() => {}); load(); };
+    app.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => set(b.dataset.ok, 'approved'));
+    app.querySelectorAll('[data-no]').forEach((b) => b.onclick = () => set(b.dataset.no, 'rejected'));
+    app.querySelectorAll('[data-limsave]').forEach((b) => b.onclick = async () => {
+      const v = +app.querySelector(`[data-lim="${b.dataset.limsave}"]`).value;
+      const ok = await sbRpc('admin_set_limit', { p_player: settings.playerId, p_target: b.dataset.limsave, p_limit: v }).catch(() => false);
+      toast(ok ? `Límite guardado: ${v} por día.` : 'No se pudo guardar.'); load();
+    });
+    document.getElementById('reload').onclick = load;
+  };
+  const load = () => sbRpc('admin_people', { p_player: settings.playerId })
+    .then((r) => { view.rows = r || []; view.err = null; }).catch((e) => { view.err = e.message; })
+    .finally(() => { if (view.name === 'admin') draw(); });
+  draw(); if (!view.rows) load();
+};
+// Al abrir: revisa el estado de acceso (por si lo aprobaron mientras tanto).
+setTimeout(() => refreshAccess().then(() => { if (view.name === 'access' && !needsAccess()) { view = { name: 'home' }; render(); } else if (view.name === 'access' || view.name === 'settings') render(); }), 500);
 // ---------- Ranking compartido (Supabase, plan gratis) ----------
 // Esta clave es "publicable": está hecha para ir en la app. Solo deja usar las dos funciones del ranking.
-if (!settings.playerId) { settings.playerId = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)); save(); }
+const uuid4 = () => (crypto.randomUUID ? crypto.randomUUID() : '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
+if (!/^[0-9a-f-]{36}$/i.test(settings.playerId || '')) { settings.playerId = uuid4(); save(); }
 if (settings.share == null) { settings.share = true; save(); }
 async function sbRpc(fn, body) {
   if (!SB_URL) throw new Error('El ranking todavía no está conectado.');
