@@ -2,8 +2,9 @@
 // Todo se guarda en este navegador (localStorage). La clave de API solo viaja a la API de Anthropic.
 
 const MODEL = 'claude-sonnet-5-5';
+const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -32,12 +33,16 @@ for (const s of subjects) {
 }
 
 // ---------- Claude ----------
-async function askClaude(system, messages, maxTokens = 1200) {
+async function askClaude(system, messages, maxTokens = 1200, model = MODEL) {
+  try { return await askClaudeOnce(system, messages, maxTokens, model); }
+  catch (e) { if (model !== MODEL && /model/i.test(e.message)) return askClaudeOnce(system, messages, maxTokens, MODEL); throw e; } // si el modelo rápido no está, usa el normal
+}
+async function askClaudeOnce(system, messages, maxTokens, model) {
   let res;
   if (!settings.key) { // sin clave propia: pasa por el servidor, que usa la clave del administrador
     try {
       res = await fetch(`${SB_URL}/functions/v1/claude`, { method: 'POST', headers: { 'content-type': 'application/json', apikey: SB_KEY },
-        body: JSON.stringify({ player: settings.playerId, model: MODEL, max_tokens: maxTokens, system, messages }) });
+        body: JSON.stringify({ player: settings.playerId, model, max_tokens: maxTokens, system, messages }) });
     } catch { throw new Error('No hay conexión a internet.'); }
     const d = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -57,7 +62,7 @@ async function askClaude(system, messages, maxTokens = 1200) {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
-      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages }),
+      body: JSON.stringify({ model, max_tokens: maxTokens, system, messages }),
     });
   } catch { throw new Error('No hay conexión a internet.'); }
   const data = await res.json().catch(() => ({}));
@@ -76,8 +81,8 @@ function parseLoose(raw) {
   if (a < 0 || b <= a) return null;
   try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; }
 }
-async function askJSON(system, user, maxTokens = 2000) {
-  const raw = await askClaude(system + '\nDevolvé SOLO JSON válido, sin texto antes ni después, sin ```.', [{ role: 'user', content: user }], maxTokens);
+async function askJSON(system, user, maxTokens = 2000, model = MODEL) {
+  const raw = await askClaude(system + '\nDevolvé SOLO JSON válido, sin texto antes ni después, sin ```.', [{ role: 'user', content: user }], maxTokens, model);
   let j = parseLoose(raw);
   if (j == null) j = parseLoose(await askClaude(system + '\nDevolvé SOLO JSON válido, sin texto antes ni después, sin ```.', [{ role: 'user', content: user }], maxTokens + 1500));
   if (j == null) throw new Error('El profe se trabó un segundo. Tocá de nuevo el botón.');
@@ -133,7 +138,7 @@ function speak(text, btn) {
   return (async () => {
     for (let i = 0; i < segs.length; i++) {
       if (token !== speakToken) return;
-      if (i % 2) { if (segs[i] === 'p') await new Promise((ok) => setTimeout(ok, 750)); else await playSfx(segs[i].slice(2)); continue; }
+      if (i % 2) { if (segs[i] === 'p') await new Promise((ok) => setTimeout(ok, 450)); else await playSfx(segs[i].slice(2)); continue; }
       const clean = segs[i].replace(/[*#_`]/g, '').replace(/\p{Extended_Pictographic}|\uFE0F/gu, '').replace(/\s+/g, ' ').trim();
       if (!clean) continue;
       if (settings.engine === 'piper' && settings.piperVoice) await speakPiper(clean, token);
@@ -312,11 +317,10 @@ function playSfx(name, once) {
       stopSfx();
       // Más fuerte: subimos el volumen y un compresor evita que se distorsione.
       const comp = c.createDynamicsCompressor(); comp.threshold.value = -20; comp.ratio.value = 6;
-      sfxOut = c.createGain(); sfxOut.gain.value = once ? 1.5 : 3.2;
+      sfxOut = c.createGain(); sfxOut.gain.value = once ? 1.5 : 2.6;
       sfxOut.connect(comp).connect(c.destination);
-      // Más largo: el sonido se repite hasta durar unos 2,5 segundos.
-      let at = 0;
-      do { at += fn(c, sfxOut, c.currentTime + 0.05 + at) + 0.12; } while (!once && at < 2.3);
+      // Un solo sonido, una sola vez.
+      const at = fn(c, sfxOut, c.currentTime + 0.05) + 0.1;
       setTimeout(res, at * 1000 + 200);
     } catch { res(); }
   });
@@ -427,11 +431,12 @@ function setHeader(title) {
 const views = {};
 // Sin clave propia y sin aprobación del administrador: solo se ve la pantalla de pedir acceso.
 const needsAccess = () => !settings.key && !(settings.access && settings.access.status === 'approved');
+let lastShown = null;
 function render() {
   if (needsAccess() && !['access', 'settings'].includes(view.name)) view = { name: 'access' };
   (views[view.name] || views.home)();
   document.body.classList.toggle('has-answer', view.name === 'module' || view.name === 'exam');
-  app.classList.remove('enter'); void app.offsetWidth; app.classList.add('enter'); // animación de entrada
+  if (lastShown !== view) { lastShown = view; app.classList.remove('enter'); void app.offsetWidth; app.classList.add('enter'); } // animación solo al cambiar de pantalla
 }
 // Pequeña vibración al tocar botones (en celulares que lo permiten).
 document.addEventListener('pointerdown', (e) => { if (e.target.closest('button, .tap, .mod') && navigator.vibrate) { try { navigator.vibrate(8); } catch {} } });
@@ -746,7 +751,7 @@ async function learnTurn(s, st, m, text) {
   status.classList.remove('hidden'); send.disabled = true; stopSpeaking();
   try {
     const sys = learnSystem(s, st, m) + `\nPaso actual: ${view.step} de ${STEPS}.`;
-    let raw = await askClaude(sys + '\nDevolvé SOLO JSON válido.', view.msgs, 1200);
+    let raw = await askClaude(sys + '\nDevolvé SOLO JSON válido.', view.msgs, 1200, FAST_MODEL);
     let j = parseLoose(raw);
     if (j == null && view === keep) { raw = await askClaude(sys + '\nDevolvé SOLO JSON válido, completo y cerrado, sin texto extra.', view.msgs, 2000); j = parseLoose(raw); }
     if (view !== keep) return;
@@ -871,7 +876,7 @@ views.exam = () => {
       const g = await askJSON(teacher() + ' Corregís exámenes con justicia y de forma alentadora, marcando qué faltó o qué estuvo mal.',
         `Tema: ${s.topic}. Pregunta: ${q}\nRespuesta del alumno: ${answer}\n` +
         'Poné dos notas enteras del 1 al 10: "correct" (qué tan correcta y completa es) y "clarity" (qué tan clara, ordenada y precisa es la explicación; si es correcta pero confusa, baja esta nota). ' +
-        'Forma: {"correct":0,"clarity":0,"feedback":"2 a 4 frases: qué estuvo bien, qué faltó o estuvo mal, y cómo decirlo más claro","ideal":"una respuesta modelo breve"}', 800);
+        'Forma: {"correct":0,"clarity":0,"feedback":"2 a 4 frases: qué estuvo bien, qué faltó o estuvo mal, y cómo decirlo más claro","ideal":"una respuesta modelo breve"}', 800, FAST_MODEL);
       view.answers[i] = { answer, correct: clamp(g.correct), clarity: clamp(g.clarity), feedback: g.feedback, ideal: g.ideal };
       render();
       if (settings.autoRead) speak(g.feedback, app.querySelector('[data-speak="fb"]'));
@@ -1271,3 +1276,5 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !window.__reloaded) { window.__reloaded = true; location.reload(); } });
 }
 render();
+// Precarga la voz natural en segundo plano, así la primera lectura no se demora.
+setTimeout(() => { if (settings.engine === 'piper' && settings.piperVoice) piperSessionFor(settings.piperVoice).catch(() => {}); }, 2500);
