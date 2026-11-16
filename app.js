@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 const PASS = 6; // nota mínima para aprobar el examen de etapa
 
 const app = document.getElementById('app');
@@ -172,37 +172,27 @@ const getSubj = () => subjects.find((s) => s.id === view.sid);
 views.settings = () => {
   setHeader('Configuración');
   const v = currentVoice();
-  const list = view.allVoices ? [...voices].sort((a, b) => a.lang.localeCompare(b.lang)) : spanishVoices();
+  const list = spanishVoices();
   const label = (x) => `${x.name.replace(/^(Microsoft|Google)\s+/, '').replace(/\s*-\s*Spanish.*$/i, '')} · ${x.lang}${genderOf(x) ? ' · ' + genderOf(x) : ''}${QUALITY.test(x.name) ? ' ★' : ''}`;
-  const hasMale = list.some((x) => genderOf(x) === 'hombre');
+  const COUNTRY = { AR: 'Argentina', ES: 'España', MX: 'México', US: 'Estados Unidos', '419': 'Latinoamérica', CO: 'Colombia', CL: 'Chile', PE: 'Perú', VE: 'Venezuela', UY: 'Uruguay' };
+  const country = (x) => COUNTRY[(x.lang.split(/[-_]/)[1] || '').toUpperCase()] || 'Español';
   app.innerHTML = `
     <h2>Voz</h2>
     <div class="card">
       <label style="margin-top:0">Voz del profe</label>
-      ${list.length ? `<select id="voiceSel">${list.map((x) => `<option value="${esc(x.voiceURI)}" ${v && v.voiceURI === x.voiceURI ? 'selected' : ''}>${esc(label(x))}</option>`).join('')}</select>`
+      ${list.length ? `<div class="voices">${list.map((x, i) => `
+        <button class="voice-btn ${v && v.voiceURI === x.voiceURI ? 'on' : ''}" data-voice="${esc(x.voiceURI)}">
+          <span class="voice-ico">${genderOf(x) === 'hombre' ? '👨' : genderOf(x) === 'mujer' ? '👩' : '🗣️'}</span>
+          <span class="voice-txt"><b>Voz ${i + 1}${genderOf(x) ? ' · ' + (genderOf(x) === 'hombre' ? 'Hombre' : 'Mujer') : ''}</b><span>${country(x)}${QUALITY.test(x.name) ? ' · ★ natural' : ''}</span></span>
+          ${v && v.voiceURI === x.voiceURI ? '<span class="voice-check">✓</span>' : ''}
+        </button>`).join('')}</div>`
         : '<p class="muted">Todavía no cargaron las voces de este teléfono. Esperá unos segundos o cerrá y abrí la app.</p>'}
-      ${list.length === 1 ? '<p class="muted small">Tu teléfono le da a Chrome una sola voz en español. Para tener más voces, seguí los pasos de más abajo.</p>' : ''}
-      <p class="muted small">★ = voz de mejor calidad. ${hasMale ? '' : 'Este navegador no trae voces de hombre en español. '}Más abajo te explico cómo sumar voces de hombre gratis.</p>
-      <button class="plain small" id="allVoices" style="padding-left:0">${view.allVoices ? 'Mostrar solo voces en español' : 'Mostrar todas las voces'}</button>
       <label>Largo de las explicaciones</label>
       <div class="seg">${[['corto', 'Muy cortas'], ['normal', 'Normales']].map(([k, n]) => `<button data-len="${k}" class="${settings.length === k ? 'on' : ''}">${n}</button>`).join('')}</div>
       <label>Velocidad: <b id="rateVal">${settings.rate.toFixed(2)}x</b></label>
       <div class="row"><span class="muted small">Lenta</span><input class="grow" id="rate" type="range" min="0.6" max="1.8" step="0.05" value="${settings.rate}"><span class="muted small">Rápida</span></div>
       <label class="row" style="gap:10px;color:var(--text)"><input type="checkbox" id="autoRead" style="width:auto" ${settings.autoRead ? 'checked' : ''}> Leer en voz alta los módulos automáticamente</label>
       <div style="margin-top:14px"><button class="soft" id="testVoice">▶ Probar voz</button></div>
-    </div>
-
-    <h2>¿Querés una voz de hombre o más natural en el celular?</h2>
-    <div class="card small" style="font-size:15px">
-      <p style="margin-top:0">En Android, Chrome usa la voz que tenga configurada el teléfono. Se cambia gratis así:</p>
-      <ol style="padding-left:20px;margin:0">
-        <li>Abrí <b>Ajustes</b> del teléfono y buscá <b>"Texto a voz"</b> (en Samsung: Administración general → Idioma → Texto a voz).</li>
-        <li>En <b>Motor preferido</b> elegí <b>Servicios de Google</b> (es el más natural).</li>
-        <li>Tocá el engranaje ⚙ al lado → <b>Instalar datos de voz</b> → <b>Español</b> (Estados Unidos o España).</li>
-        <li>Elegí una de las voces de hombre (probalas con el botón ▶) y descargala.</li>
-        <li>Cerrá esta app y abrila de nuevo.</li>
-      </ol>
-      <p class="muted" style="margin-bottom:0">En la compu, abrí la app en Microsoft Edge: trae voces muy naturales de hombre, como "Tomás" de Argentina.</p>
     </div>
 
     <h2>Clave de Claude</h2>
@@ -215,8 +205,12 @@ views.settings = () => {
     <p class="muted small" style="text-align:center;margin-top:24px">Versión ${APP_VERSION}</p>
 `;
   const $ = (id) => document.getElementById(id);
-  if ($('voiceSel')) $('voiceSel').onchange = () => { settings.voiceURI = $('voiceSel').value; save(); speak('Hola, esta es mi voz.'); };
-  if ($('allVoices')) $('allVoices').onclick = () => { view.allVoices = !view.allVoices; render(); };
+  app.querySelectorAll('[data-voice]').forEach((b) => b.onclick = () => {
+    settings.voiceURI = b.dataset.voice; save();
+    app.querySelectorAll('[data-voice]').forEach((x) => { x.classList.toggle('on', x === b); const c = x.querySelector('.voice-check'); if (c) c.remove(); });
+    b.insertAdjacentHTML('beforeend', '<span class="voice-check">✓</span>');
+    speak('Hola, soy tu profe. Así suena mi voz.');
+  });
   app.querySelectorAll('[data-len]').forEach((b) => b.onclick = () => { settings.length = b.dataset.len; save(); render(); });
   $('rate').oninput = (e) => { settings.rate = +e.target.value; $('rateVal').textContent = settings.rate.toFixed(2) + 'x'; save(); };
   $('rate').onchange = () => speak('Así suena esta velocidad.');

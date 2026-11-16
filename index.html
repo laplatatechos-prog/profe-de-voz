@@ -122,6 +122,13 @@
   .loading::after { content: ''; display: inline-block; width: 14px; height: 14px; margin-left: 8px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+  .voices { display: flex; flex-direction: column; gap: 8px; }
+  .voice-btn { display: flex; align-items: center; gap: 12px; text-align: left; background: var(--bg); color: var(--text); border: 2px solid transparent; padding: 12px 14px; }
+  .voice-btn.on { background: var(--accent-soft); border-color: var(--accent); }
+  .voice-ico { font-size: 28px; }
+  .voice-txt { flex: 1; display: flex; flex-direction: column; }
+  .voice-txt span { font-size: 14px; color: var(--muted); font-weight: 400; }
+  .voice-check { color: var(--accent); font-weight: 700; font-size: 20px; animation: pop .3s; }
   .speak-btn { display: inline-flex; gap: 6px; align-items: center; }
 </style>
 </head>
