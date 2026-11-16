@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 16;
+const APP_VERSION = 17;
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
 const tint = (i) => PALETTE[i % PALETTE.length];
 const PASS = 6; // nota mínima para aprobar el examen de etapa
@@ -100,7 +100,7 @@ function speak(text, btn) {
   const wasThis = speakingBtn && speakingBtn === btn;
   stopSpeaking();
   if (wasThis) return; // segundo toque = parar
-  const clean = String(text).replace(/[*#_`]/g, '');
+  const clean = String(text).replace(/[*#_`]/g, '').replace(/\p{Extended_Pictographic}|\uFE0F/gu, '').replace(/\s+/g, ' ').trim();
   speakingBtn = btn || null;
   if (btn) btn.textContent = '■ Parar';
   if (settings.engine === 'piper' && settings.piperVoice) speakPiper(clean, speakToken);
@@ -108,12 +108,14 @@ function speak(text, btn) {
 }
 function speakBrowser(clean) {
   if (!('speechSynthesis' in window)) return stopSpeaking();
+  const token = speakToken; // si después se pide otra lectura, esta se ignora
   const sentences = clean.replace(/\n+/g, ' ').match(/[^.!?]+[.!?]*\s*/g) || [clean];
   const parts = [];
   for (const x of sentences) { if (parts.length && (parts[parts.length - 1] + x).length < 220) parts[parts.length - 1] += x; else parts.push(x); }
   const v = currentVoice();
   let i = 0;
   const next = () => {
+    if (token !== speakToken) return; // un "cancel" viejo no debe cortar la lectura nueva
     if (i >= parts.length) { stopSpeaking(); return; }
     const u = new SpeechSynthesisUtterance(parts[i++].trim());
     if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'es-AR';
@@ -121,7 +123,8 @@ function speakBrowser(clean) {
     u.onend = next; u.onerror = next;
     speechSynthesis.speak(u);
   };
-  next();
+  // En Android, hablar justo después de cancelar a veces se pierde: esperamos un instante.
+  setTimeout(next, 150);
 }
 // ---- Voces naturales Piper: se descargan una vez y funcionan dentro del navegador, gratis ----
 const PIPER_VOICES = [
