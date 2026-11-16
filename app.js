@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
 const tint = (i) => PALETTE[i % PALETTE.length];
 const PASS = 6; // nota mínima para aprobar el examen de etapa
@@ -501,13 +501,13 @@ function drawTurns() {
   const chat = document.getElementById('chat'); if (!chat) return;
   chat.innerHTML = view.turns.map((t, i) => t.role === 'me'
     ? `<div class="msg me">${esc(t.text)}</div>`
-    : `<div class="msg ai">${t.score != null ? `<div class="mini-score ${t.score >= PASS ? 'ok' : 'bad'}">${levelOf(t.score)[2]} ${fmt(t.score)} · ${esc(levelOf(t.score)[3])}</div>${t.joke ? `<div class="joke">${esc(t.joke)}</div>` : ''}` : ''}${t.feedback ? `<div class="fb">${esc(t.feedback)}</div>` : ''}${t.explain ? `<div>${esc(t.explain)}</div>` : ''}${t.question ? `<div class="q">❓ ${esc(t.question)}</div>` : ''}
+    : `<div class="msg ai">${t.score != null ? `<div class="mini-score ${t.score >= PASS ? 'ok' : 'bad'}">${t.lv ? t.lv.emoji : levelOf(t.score)[2]} ${fmt(t.score)} · ${esc(t.lv ? t.lv.sos : levelOf(t.score)[3])}</div>${t.joke ? `<div class="joke">${esc(t.joke)}</div>` : ''}` : ''}${t.feedback ? `<div class="fb">${esc(t.feedback)}</div>` : ''}${t.explain ? `<div>${esc(t.explain)}</div>` : ''}${t.question ? `<div class="q">❓ ${esc(t.question)}</div>` : ''}
         <button class="plain small say" data-say="${i}">🔊</button></div>`).join('');
   chat.querySelectorAll('[data-say]').forEach((b) => b.onclick = () => speak(turnText(view.turns[+b.dataset.say])));
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
-const scoreLine = (n) => `${settings.name ? settings.name + ', sacaste' : 'Sacaste'} ${fmt(n)}. ${levelOf(n)[3]}.`;
-const turnText = (t) => [t.score != null ? scoreLine(t.score) : '', t.joke, t.feedback, t.explain, t.question].filter(Boolean).join(' ');
+const scoreLine = (n, lv) => `${settings.name ? settings.name + ', sacaste' : 'Sacaste'} ${fmt(n)}. ${lv ? lv.sos : levelOf(n)[3]}.`;
+const turnText = (t) => [t.score != null ? scoreLine(t.score, t.lv) : '', t.joke, t.feedback, t.explain, t.question].filter(Boolean).join(' ');
 async function learnTurn(s, st, m, text) {
   const keep = view;
   const status = document.getElementById('learnStatus'), send = document.getElementById('send');
@@ -533,7 +533,8 @@ async function learnTurn(s, st, m, text) {
         view.lastFeedback = j.feedback;
         return finishExam(s);
       }
-      turn = { role: 'ai', score, joke: jokeFor(score), feedback: j.feedback, explain: j.explain, question: j.question };
+      const lv = pickLevel(score);
+      turn = { role: 'ai', score, lv, joke: lv.joke, feedback: j.feedback, explain: j.explain, question: j.question };
     }
     view.turns.push(turn);
     render();
@@ -639,22 +640,87 @@ views.exam = () => {
     } catch (e) { send.disabled = false; document.getElementById('examStatus').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
   };
 };
-// Niveles chistosos (de menor a mayor). "min" = nota mínima para llegar a ese nivel.
+// Niveles chistosos (de menor a mayor). "min" = nota mínima. Cada nivel tiene varios personajes
+// (se van alternando) y cada personaje sus chistes, más chistes generales del nivel. Desde 6, todos positivos.
 const LEVELS = [
-  { min: 0, name: 'Nivel Musgo', sos: 'Sos un Musgo', emoji: '🌿', jokes: ['Estás verde y quietito, pegado a la piedra. ¡A moverse!', 'El musgo crece despacito… pero crece. ¡Vos también!'] },
-  { min: 2, name: 'Nivel Plancton', sos: 'Sos un Plancton', emoji: '🦠', jokes: ['Sos chiquitito, pero las ballenas comen de vos. ¡Algo es algo!', 'Flotás en el océano del conocimiento sin rumbo. ¡Nadá un poquito!'] },
-  { min: 3, name: 'Nivel Larvoide', sos: 'Sos un Larvoide', emoji: '🐛', jokes: ['Todavía sos larva, pero ojo que de acá sale mariposa.', 'Te arrastrás, pero vas para adelante. ¡Un repaso y te salen alas!'] },
-  { min: 4, name: 'Nivel Araña de rincón', sos: 'Sos una Araña de rincón', emoji: '🕷️', jokes: ['Escondida en el rincón, sin hacer ruido… ¡salí a la luz!', 'Ya tejiste algo de telaraña, falta que se pegue el conocimiento.'] },
-  { min: 5, name: 'Nivel Cuadrúpedo', sos: 'Sos un Cuadrúpedo', emoji: '🐕', jokes: ['Caminás en cuatro patas, pero ya caminás. ¡Falta pararse!', 'Firme en cuatro patas. Un empujoncito y te ponés en dos.'] },
-  { min: 6, name: 'Nivel Cachalote bípedo', sos: 'Sos un Cachalote bípedo', emoji: '🐋', jokes: ['Un cachalote caminando en dos patas: raro, pero aprobaste.', 'Sos enorme y raro, pero avanzás. ¡Así se hace!'] },
-  { min: 7, name: 'Nivel Presidente de país del tercer mundo', sos: 'Sos un Presidente de país del tercer mundo', emoji: '🎩', jokes: ['Prometés mucho y cumplís bastante. ¡Más que muchos presidentes!', 'Ya tenés banda presidencial. Ahora no te endeudes con el FMI.'] },
-  { min: 8, name: 'Nivel Homo erectus', sos: 'Sos un Homo erectus', emoji: '🦍', jokes: ['Ya caminás derechito y descubriste el fuego. ¡Bien ahí!', 'Postura erguida y mente despierta. La evolución te sonríe.'] },
-  { min: 9, name: 'Nivel Ninja supremo', sos: 'Sos un Ninja supremo', emoji: '🥷', jokes: ['Respondiste tan rápido y preciso que nadie te vio venir.', 'Cinturón negro en este tema. El examen ni se dio cuenta.'] },
-  { min: 9.7, name: 'Nivel Dios', sos: 'Sos un Dios', emoji: '⚡', jokes: ['Nivel Dios: el examen te pidió disculpas por molestarte.', 'Ya no estudiás el tema: el tema te estudia a vos.'] },
+  { min: 0, chars: [
+    ['Musgo', 'Sos un Musgo', '🌿', ['Estás verde y quietito, pegado a la piedra. ¡A moverse!', 'El musgo crece despacito… pero crece. ¡Vos también!']],
+    ['Ameba dormida', 'Sos una Ameba dormida', '🫧', ['Ni núcleo despierto tenés todavía. ¡Arriba, que hay que estudiar!', 'Te dividiste en dos y ninguna mitad sabía la respuesta.']],
+    ['Piedra con ojos', 'Sos una Piedra con ojos', '🪨', ['Mirás todo, pero no se te mueve ni una idea. ¡Dale que podés!', 'Firme como roca… lástima que la respuesta se fue rodando.']],
+    ['Bacteria de heladera', 'Sos una Bacteria de heladera', '🦠', ['Vivís al lado del dulce de leche y ni así te endulzó el tema.', 'Hace frío ahí adentro, ¿no? Salí de la heladera y repasemos.']],
+  ], jokes: ['Arrancamos desde el fondo del mar. Para arriba es todo ganancia.', 'Tranqui, hasta los dinosaurios empezaron siendo un bichito.', 'Hoy no fue, pero mañana sí. ¡Repasamos y volvemos!'] },
+  { min: 2, chars: [
+    ['Plancton', 'Sos un Plancton', '🦐', ['Sos chiquitito, pero las ballenas comen de vos. ¡Algo es algo!', 'Flotás en el océano del conocimiento sin rumbo. ¡Nadá un poquito!']],
+    ['Mosquito despistado', 'Sos un Mosquito despistado', '🦟', ['Zumbás alrededor de la respuesta pero no la picás.', 'Mucho ruido de alas y poca puntería. ¡Apuntale a la idea!']],
+    ['Lombriz mareada', 'Sos una Lombriz mareada', '🪱', ['Diste tantas vueltas bajo tierra que te perdiste la respuesta.', 'Cavaste para el otro lado. ¡Pegá la vuelta que está cerca!']],
+    ['Medusa sin GPS', 'Sos una Medusa sin GPS', '🪼', ['Flotás para donde te lleva la ola. Pongamos rumbo al tema.', 'Transparente y sin dirección. ¡Prendé el GPS del cerebro!']],
+  ], jokes: ['Ya no estás en el fondo: subiste un escalón de la evolución.', 'Chiquito pero con ganas. Un repaso y crecés.', 'Algo quedó, ¡y eso ya es un montón para empezar!'] },
+  { min: 3, chars: [
+    ['Larvoide', 'Sos un Larvoide', '🐛', ['Todavía sos larva, pero ojo que de acá sale mariposa.', 'Te arrastrás, pero vas para adelante. ¡Un repaso y te salen alas!']],
+    ['Renacuajo', 'Sos un Renacuajo', '🐸', ['Todavía tenés cola, pero las patitas ya vienen saliendo.', 'Nadás en círculos en el charco. ¡Pronto vas a saltar!']],
+    ['Caracol sin casa', 'Sos un Caracol sin casa', '🐌', ['Vas lento y encima te olvidaste la casa. ¡Pero vas!', 'A tu ritmo, dejando baba de conocimiento. ¡Seguí!']],
+    ['Gusano de seda dormilón', 'Sos un Gusano de seda dormilón', '🐛', ['Empezaste el capullo y te quedaste dormido adentro.', 'Hilaste un poquito de seda. Falta tejer el resto del tema.']],
+  ], jokes: ['Ya se ve algo de forma. Falta un empujón.', 'Te estás armando, pieza por pieza. ¡Dale que sale!', 'De a poquito se llega lejos. ¡Un repasito más!'] },
+  { min: 4, chars: [
+    ['Araña de rincón', 'Sos una Araña de rincón', '🕷️', ['Escondida en el rincón, sin hacer ruido… ¡salí a la luz!', 'Ya tejiste algo de telaraña, falta que se pegue el conocimiento.']],
+    ['Cucaracha valiente', 'Sos una Cucaracha valiente', '🪳', ['Sobrevivís a todo, hasta a este examen. ¡Ahora a mejorar!', 'Prendieron la luz y no saliste corriendo. ¡Eso es valentía!']],
+    ['Hormiga perdida', 'Sos una Hormiga perdida', '🐜', ['Cargás la miga correcta pero para el hormiguero equivocado.', 'Trabajadora sos, falta encontrar el caminito.']],
+    ['Bicho bolita', 'Sos un Bicho bolita', '🐞', ['Cuando llegó la pregunta difícil, te hiciste bolita. ¡Desenrollate!', 'Rodaste cerca de la respuesta. Un poquito más y llegás.']],
+  ], jokes: ['Casi la mitad: el vaso ya está medio lleno.', 'Estás en la puerta. Un repaso y entrás.', 'Ya sabés bastante, falta ordenar las ideas.'] },
+  { min: 5, chars: [
+    ['Cuadrúpedo', 'Sos un Cuadrúpedo', '🐕', ['Caminás en cuatro patas, pero ya caminás. ¡Falta pararse!', 'Firme en cuatro patas. Un empujoncito y te ponés en dos.']],
+    ['Mono aprendiz', 'Sos un Mono aprendiz', '🐒', ['Ya agarraste la banana, falta pelarla bien.', 'Saltás de rama en rama y casi llegás a la cima.']],
+    ['Perro de la plaza', 'Sos un Perro de la plaza', '🐶', ['Buscaste la pelota y casi la traés. ¡Buen perro!', 'Olfato tenés, falta un poquito de entrenamiento.']],
+    ['Pulpo en entrenamiento', 'Sos un Pulpo en entrenamiento', '🐙', ['Tenés ocho brazos y agarraste la mitad de las ideas.', 'Te falta poquito: un tentáculo más y aprobás.']],
+  ], jokes: ['Estás a un pasito de aprobar. ¡Ya casi!', 'Raspando, pero en camino. ¡Otro intento y lo sacás!', 'Medio examen en el bolsillo. Vamos por la otra mitad.'] },
+  { min: 6, chars: [
+    ['Cachalote bípedo', 'Sos un Cachalote bípedo', '🐋', ['Un cachalote caminando en dos patas: raro, pero aprobaste.', 'Sos enorme y raro, pero avanzás. ¡Así se hace!']],
+    ['Carpincho sabio', 'Sos un Carpincho sabio', '🦫', ['Tranquilo, sin apuro, y aprobaste. Así son los carpinchos.', 'Todos los animales se te sientan encima para aprender.']],
+    ['Pingüino emprendedor', 'Sos un Pingüino emprendedor', '🐧', ['Con traje y todo, ya cerraste tu primer negocio: aprobar.', 'Caminás medio torpe, pero llegaste a la meta.']],
+    ['Delfín con anteojos', 'Sos un Delfín con anteojos', '🐬', ['Inteligente y simpático. Los anteojos te quedan bárbaro.', 'Saltaste la ola del examen con estilo.']],
+  ], jokes: ['¡Aprobaste! Ya sos parte del club de los que saben.', 'Bien ahí. Lo sacaste adelante.', '¡Adentro! Ya se nota que le estás agarrando la mano.'] },
+  { min: 7, chars: [
+    ['Presidente de país del tercer mundo', 'Sos un Presidente de país del tercer mundo', '🎩', ['Prometés mucho y cumplís bastante. ¡Más que muchos presidentes!', 'Ya tenés banda presidencial. Ahora no te endeudes con el FMI.']],
+    ['Cóndor andino', 'Sos un Cóndor andino', '🦅', ['Volás alto sobre la cordillera del conocimiento.', 'Desde allá arriba ya se ve todo el tema.']],
+    ['Capitán de barco pirata', 'Sos un Capitán de barco pirata', '🏴‍☠️', ['Encontraste el tesoro. ¡Al abordaje del próximo tema!', 'Tu loro ya repite las respuestas correctas.']],
+    ['Chef con estrella', 'Sos un Chef con estrella', '👨‍🍳', ['Te salió un plato riquísimo. Le faltó una pizca de sal nomás.', 'La receta del tema ya la tenés casi de memoria.']],
+  ], jokes: ['¡Muy bien! Ya jugás en primera.', 'Esto ya es nivel serio. ¡Felicitaciones!', 'Se nota que estudiaste. ¡Aplausos!'] },
+  { min: 8, chars: [
+    ['Homo erectus', 'Sos un Homo erectus', '🦍', ['Ya caminás derechito y descubriste el fuego. ¡Bien ahí!', 'Postura erguida y mente despierta. La evolución te sonríe.']],
+    ['Lechuza doctora', 'Sos una Lechuza doctora', '🦉', ['Con anteojos y diploma. Todo el bosque viene a consultarte.', 'Ves todo clarito, hasta de noche.']],
+    ['Astronauta', 'Sos un Astronauta', '🧑‍🚀', ['Despegaste. Este tema ya te queda chico, te vas a la Luna.', 'Houston, no tenemos ningún problema.']],
+    ['Mago de barrio', 'Sos un Mago de barrio', '🧙', ['Sacaste las respuestas de la galera como si nada.', 'Abracadabra: apareció un ocho.']],
+  ], jokes: ['¡Excelente! Ya podrías explicarlo vos.', 'Nivel crack. El profe está orgulloso.', '¡Qué bien! Esto ya es de los mejores.'] },
+  { min: 9, chars: [
+    ['Ninja supremo', 'Sos un Ninja supremo', '🥷', ['Respondiste tan rápido y preciso que nadie te vio venir.', 'Cinturón negro en este tema. El examen ni se dio cuenta.']],
+    ['Dragón sabio', 'Sos un Dragón sabio', '🐉', ['Escupís fuego y respuestas correctas.', 'Mil años de sabiduría en un solo examen.']],
+    ['Superhéroe del barrio', 'Sos un Superhéroe del barrio', '🦸', ['Salvaste el examen sin despeinarte la capa.', 'El barrio duerme tranquilo: vos sabés el tema.']],
+    ['Campeón del mundo', 'Sos un Campeón del mundo', '🏆', ['Levantaste la copa. ¡Dale campeón!', 'Vuelta olímpica con el tema en la mano.']],
+  ], jokes: ['¡Impresionante! Casi perfecto.', 'Esto ya es nivel maestro.', '¡Tremendo! Pocos llegan hasta acá.'] },
+  { min: 9.7, chars: [
+    ['Dios', 'Sos un Dios', '⚡', ['Nivel Dios: el examen te pidió disculpas por molestarte.', 'Ya no estudiás el tema: el tema te estudia a vos.']],
+    ['Leyenda viviente', 'Sos una Leyenda viviente', '🌟', ['Van a hacer una estatua tuya en la plaza.', 'Dentro de mil años van a contar este examen.']],
+    ['Rey del universo', 'Sos el Rey del universo', '👑', ['Las estrellas se acomodaron para aplaudirte.', 'Hasta el sol te pidió un autógrafo.']],
+    ['Unicornio genio', 'Sos un Unicornio genio', '🦄', ['Mágico, único y perfecto. Así fue este examen.', 'Un examen así se ve una vez cada mil años.']],
+  ], jokes: ['¡Perfecto! No hay nada más que enseñarte acá.', 'Puntaje de leyenda. ¡Felicitaciones!', 'Ya podés dar clases de esto.'] },
 ];
 const levelFor = (n) => [...LEVELS].reverse().find((l) => n >= l.min) || LEVELS[0];
-const jokeFor = (n) => { const j = levelFor(n).jokes; return j[Math.floor(Math.random() * j.length)]; };
-const levelOf = (n) => { const l = levelFor(n); return [n, l.name, l.emoji, l.sos]; };
+// Lo que ya salió, para no repetir personaje ni chiste.
+let rot = store.get('profe-rot', { chars: {}, jokes: [] });
+const pickOther = (arr, avoid) => { const c = arr.filter((x) => !avoid.includes(x)); const pool = c.length ? c : arr; return pool[Math.floor(Math.random() * pool.length)]; };
+// Elige un personaje distinto al último de ese nivel y un chiste que no haya salido hace poco.
+function pickLevel(n) {
+  const l = levelFor(n), key = String(l.min);
+  const last = [].concat(rot.chars[key] || []);
+  const c = pickOther(l.chars, l.chars.filter((x) => last.includes(x[0])));
+  const joke = pickOther(c[3].concat(l.jokes), rot.jokes);
+  rot.chars[key] = [c[0]].concat(last).slice(0, 2);
+  rot.jokes = [joke].concat(rot.jokes).slice(0, 25);
+  store.set('profe-rot', rot);
+  return { name: 'Nivel ' + c[0], sos: c[1], emoji: c[2], joke };
+}
+const jokeFor = (n) => pickLevel(n).joke;
+const levelOf = (n) => { const c = levelFor(n).chars[0]; return [n, 'Nivel ' + c[0], c[2], c[1]]; };
 const modBest = (m) => (m.scores && m.scores.length ? Math.max(...m.scores) : null);
 function stageScore(st) {
   const xs = (st.modules || []).map(modBest).filter((x) => x != null).concat(st.exams.map((e) => e.score));
@@ -693,16 +759,16 @@ views.result = () => {
   const isMod = view.type === 'modulo';
   const m = isMod ? st.modules[view.mi] : null;
   const lastMod = isMod && view.mi === st.modules.length - 1;
-  if (!view.joke) view.joke = jokeFor(view.score);
+  if (!view.lv) { view.lv = pickLevel(view.score); view.joke = view.lv.joke; }
   const msg = ok ? (view.unlocked ? '¡Terminaste la etapa! Se habilitó la siguiente.' : view.score >= 8 ? '¡Excelente!' : '¡Muy bien!') : 'Todavía no. Repetí el módulo y probá de nuevo.';
   app.innerHTML = `
     <div class="result-screen ${ok ? 'pass' : 'fail'}">
       <div class="result-inner">
         <div class="result-topic">${isMod ? esc(m.title) : esc(cfg.name) + ' · ' + esc(st.title)}</div>
-        <div class="result-emoji">${levelOf(view.score)[2]}</div>
+        <div class="result-emoji">${view.lv.emoji}</div>
         <div class="result-label">${settings.name ? esc(settings.name) + ", sacaste" : "Sacaste"}</div>
         <div class="result-num">${fmt(view.score)}</div>
-        <div class="result-level">${levelOf(view.score)[3]}</div>
+        <div class="result-level">${esc(view.lv.sos)}</div>
         <div class="result-joke">${esc(view.joke)}</div>
         ${view.feedback ? `<div class="result-joke" style="font-style:normal">${esc(view.feedback)}</div>` : ""}
         <div class="result-msg">${msg}</div>
@@ -716,7 +782,7 @@ views.result = () => {
           <button class="block result-btn ghost" id="again">Elegir otro examen</button>`}
       </div>
     </div>`;
-  speak(`${scoreLine(view.score)} ${view.joke} ${view.feedback || ''} ${msg}`);
+  speak(`${scoreLine(view.score, view.lv)} ${view.joke} ${view.feedback || ''} ${msg}`);
   if (ok) confetti();
   document.getElementById('toSubj').onclick = () => { stack.length = 0; view = { name: 'home' }; go('subject', { sid: s.id }); };
   const ag = document.getElementById('again'); if (ag) ag.onclick = () => go('examMenu', { sid: s.id, si: view.si }, false);
