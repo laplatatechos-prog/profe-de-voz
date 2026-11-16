@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 18;
+const APP_VERSION = 19;
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
 const tint = (i) => PALETTE[i % PALETTE.length];
 const PASS = 6; // nota mínima para aprobar el examen de etapa
@@ -501,12 +501,13 @@ function drawTurns() {
   const chat = document.getElementById('chat'); if (!chat) return;
   chat.innerHTML = view.turns.map((t, i) => t.role === 'me'
     ? `<div class="msg me">${esc(t.text)}</div>`
-    : `<div class="msg ai">${t.score != null ? `<div class="mini-score ${t.score >= PASS ? 'ok' : 'bad'}">${levelOf(t.score)[2]} ${fmt(t.score)}</div>` : ''}${t.feedback ? `<div class="fb">${esc(t.feedback)}</div>` : ''}${t.explain ? `<div>${esc(t.explain)}</div>` : ''}${t.question ? `<div class="q">❓ ${esc(t.question)}</div>` : ''}
+    : `<div class="msg ai">${t.score != null ? `<div class="mini-score ${t.score >= PASS ? 'ok' : 'bad'}">${levelOf(t.score)[2]} ${fmt(t.score)} · ${esc(levelOf(t.score)[3])}</div>${t.joke ? `<div class="joke">${esc(t.joke)}</div>` : ''}` : ''}${t.feedback ? `<div class="fb">${esc(t.feedback)}</div>` : ''}${t.explain ? `<div>${esc(t.explain)}</div>` : ''}${t.question ? `<div class="q">❓ ${esc(t.question)}</div>` : ''}
         <button class="plain small say" data-say="${i}">🔊</button></div>`).join('');
   chat.querySelectorAll('[data-say]').forEach((b) => b.onclick = () => speak(turnText(view.turns[+b.dataset.say])));
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
-const turnText = (t) => [t.feedback, t.explain, t.question].filter(Boolean).join(' ');
+const scoreLine = (n) => `${settings.name ? settings.name + ', sacaste' : 'Sacaste'} ${fmt(n)}. ${levelOf(n)[3]}.`;
+const turnText = (t) => [t.score != null ? scoreLine(t.score) : '', t.joke, t.feedback, t.explain, t.question].filter(Boolean).join(' ');
 async function learnTurn(s, st, m, text) {
   const keep = view;
   const status = document.getElementById('learnStatus'), send = document.getElementById('send');
@@ -532,7 +533,7 @@ async function learnTurn(s, st, m, text) {
         view.lastFeedback = j.feedback;
         return finishExam(s);
       }
-      turn = { role: 'ai', score, feedback: j.feedback, explain: j.explain, question: j.question };
+      turn = { role: 'ai', score, joke: jokeFor(score), feedback: j.feedback, explain: j.explain, question: j.question };
     }
     view.turns.push(turn);
     render();
@@ -715,7 +716,7 @@ views.result = () => {
           <button class="block result-btn ghost" id="again">Elegir otro examen</button>`}
       </div>
     </div>`;
-  speak(`${settings.name ? settings.name + ', sacaste' : 'Sacaste'} ${fmt(view.score)}. ${levelOf(view.score)[3]}. ${view.joke} ${msg}`);
+  speak(`${scoreLine(view.score)} ${view.joke} ${view.feedback || ''} ${msg}`);
   if (ok) confetti();
   document.getElementById('toSubj').onclick = () => { stack.length = 0; view = { name: 'home' }; go('subject', { sid: s.id }); };
   const ag = document.getElementById('again'); if (ag) ag.onclick = () => go('examMenu', { sid: s.id, si: view.si }, false);
