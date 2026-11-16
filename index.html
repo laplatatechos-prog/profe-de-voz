@@ -160,10 +160,20 @@
   .msg.me { background: linear-gradient(135deg, #eeebff, #e6f2ff); }
   #stopFab { position: fixed; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 40; border-radius: 999px;
     padding: 12px 18px; font-weight: 800; background: #d9d4cc; color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.15); opacity: .55; }
+  body.has-answer #stopFab { bottom: auto; top: calc(64px + env(safe-area-inset-top)); padding: 8px 14px; font-size: 14px; }
   #stopFab.on { background: linear-gradient(135deg, #ff6b6b, #ff8a4c); opacity: 1; animation: pulse 1.2s infinite; }
   @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
   button.danger { background: #ffecec; color: #d64545; box-shadow: none; }
   main { padding-bottom: 90px; }
+  .msg.ai { position: relative; padding-right: 40px; white-space: normal; }
+  .msg.ai > div { white-space: pre-wrap; }
+  .msg .q { margin-top: 8px; font-weight: 700; color: var(--accent); }
+  .msg .fb { margin-bottom: 6px; }
+  .msg .say { position: absolute; top: 4px; right: 2px; padding: 6px 8px; font-size: 16px; }
+  .mini-score { display: inline-block; font-size: 13px; font-weight: 800; padding: 2px 10px; border-radius: 999px; margin-bottom: 6px; }
+  .mini-score.ok { background: var(--ok-soft); color: var(--ok); } .mini-score.bad { background: #ffecec; color: #d64545; }
+  .answer-row { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0 12px; align-items: flex-end; margin-top: 10px; }
+  .answer-row textarea { min-height: 52px; }
   .speak-btn { display: inline-flex; gap: 6px; align-items: center; }
 </style>
 </head>

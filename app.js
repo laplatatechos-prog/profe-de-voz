@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 11;
+const APP_VERSION = 12;
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
 const tint = (i) => PALETTE[i % PALETTE.length];
 const PASS = 6; // nota mínima para aprobar el examen de etapa
@@ -227,6 +227,7 @@ function setHeader(title) {
 const views = {};
 function render() {
   (views[view.name] || views.home)();
+  document.body.classList.toggle('has-answer', view.name === 'module' || view.name === 'exam');
   app.classList.remove('enter'); void app.offsetWidth; app.classList.add('enter'); // animación de entrada
 }
 // Pequeña vibración al tocar botones (en celulares que lo permiten).
@@ -277,8 +278,6 @@ views.settings = () => {
           ${settings.engine !== 'piper' && v && v.voiceURI === x.voiceURI ? '<span class="voice-check">✓</span>' : ''}
         </button>`).join('')}</div>`
         : `<div class="voices"><button class="voice-btn ${settings.engine !== 'piper' ? 'on' : ''}" data-voice=""><span class="voice-ico">🗣️</span><span class="voice-txt"><b>Voz del teléfono</b><span>Español</span></span>${settings.engine !== 'piper' ? '<span class="voice-check">✓</span>' : ''}</button></div>`}
-      <label>Largo de las explicaciones</label>
-      <div class="seg">${[['corto', 'Muy cortas'], ['normal', 'Normales']].map(([k, n]) => `<button data-len="${k}" class="${settings.length === k ? 'on' : ''}">${n}</button>`).join('')}</div>
       <label>Velocidad: <b id="rateVal">${settings.rate.toFixed(2)}x</b></label>
       <div class="row"><span class="muted small">Lenta</span><input class="grow" id="rate" type="range" min="0.6" max="1.8" step="0.05" value="${settings.rate}"><span class="muted small">Rápida</span></div>
       <label class="row" style="gap:10px;color:var(--text)"><input type="checkbox" id="autoRead" style="width:auto" ${settings.autoRead ? 'checked' : ''}> Leer cada tema en voz alta automáticamente</label>
@@ -328,7 +327,6 @@ views.settings = () => {
     settings.engine = 'piper'; settings.piperVoice = id; save(); render();
     speak('Hola, soy tu profe. Así suena mi voz.');
   });
-  app.querySelectorAll('[data-len]').forEach((b) => b.onclick = () => { settings.length = b.dataset.len; save(); render(); });
   $('rate').oninput = (e) => { settings.rate = +e.target.value; $('rateVal').textContent = settings.rate.toFixed(2) + 'x'; save(); };
   $('rate').onchange = () => speak('Así suena esta velocidad.');
   $('autoRead').onchange = (e) => { settings.autoRead = e.target.checked; save(); };
@@ -451,74 +449,84 @@ async function ensureModules(s, i) {
   save();
 }
 
-// ---------- Módulo ----------
+// ---------- Módulo: aprender conversando ----------
+// El profe explica una idea en 1 o 2 frases y enseguida pregunta. Corrige, explica la siguiente idea y vuelve a preguntar.
+// Son 2 pasos por módulo; si el alumno pide más detalle, recién ahí se extiende. Al final: puntaje, nivel y chiste.
+const STEPS = 2;
+function learnSystem(s, st, m) {
+  return TEACHER + `
+Estás enseñando "${s.topic}". Etapa: "${st.title}". Módulo: "${m.title}".
+Enseñás este módulo en ${STEPS} pasos, como una charla. En cada paso explicás UNA sola idea en 1 o 2 frases muy cortas (máximo 30 palabras en total) y enseguida hacés UNA pregunta corta sobre esa idea.
+Siempre respondés SOLO con JSON válido, sin texto extra:
+- Si el mensaje es "EMPEZAR": {"explain":"idea 1","question":"pregunta 1"}
+- Si el alumno responde la pregunta: {"kind":"answer","correct":1-10,"clarity":1-10,"feedback":"una frase corta: si estuvo bien o qué faltó","explain":"siguiente idea (vacío si ya fue el último paso)","question":"siguiente pregunta (vacío si ya fue el último paso)"}
+  "correct" = qué tan correcta es la respuesta. "clarity" = qué tan clara y precisa la explicó.
+- Si el alumno NO responde sino que pregunta algo o pide más detalle: {"kind":"doubt","reply":"respondé su duda, acá sí podés extenderte un poco (máximo 70 palabras)","question":"repetí la pregunta pendiente"}`;
+}
 views.module = () => {
   const s = getSubj(); const st = s.stages[view.si]; const m = st.modules[view.mi];
   setHeader(`${view.si + 1}. ${st.title}`);
-  const total = st.modules.length;
+  if (!view.turns) { view.turns = []; view.msgs = []; view.answers = []; view.step = 1; view.type = 'modulo'; }
   app.innerHTML = `
-    <div class="muted small">Módulo ${view.mi + 1} de ${total}</div>
+    <div class="muted small">Módulo ${view.mi + 1} de ${st.modules.length} · Paso ${Math.min(view.step, STEPS)} de ${STEPS}</div>
     <div class="lesson-title">${esc(m.title)}</div>
-    <div id="modBody">${m.content ? '' : '<div class="loading">Preparando el módulo…</div>'}</div>`;
-  if (m.content) drawModule(s, st, m); else loadModule(s, st, m);
+    <div class="chat" id="chat"></div>
+    <div id="learnStatus" class="loading hidden">Pensando…</div>
+    <div class="row answer-row" id="answerRow">
+      <textarea class="grow" id="ans" rows="2" placeholder="Respondé o preguntá lo que quieras"></textarea>
+      <button id="send">Enviar</button>
+    </div>`;
+  drawTurns();
+  const send = document.getElementById('send'), ans = document.getElementById('ans');
+  ans.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send.click(); } };
+  send.onclick = () => { const t = ans.value.trim(); if (!t) return; ans.value = ''; learnTurn(s, st, m, t); };
+  if (!view.turns.length) learnTurn(s, st, m, null);
 };
-async function loadModule(s, st, m) {
+function drawTurns() {
+  const chat = document.getElementById('chat'); if (!chat) return;
+  chat.innerHTML = view.turns.map((t, i) => t.role === 'me'
+    ? `<div class="msg me">${esc(t.text)}</div>`
+    : `<div class="msg ai">${t.score != null ? `<div class="mini-score ${t.score >= PASS ? 'ok' : 'bad'}">${levelOf(t.score)[2]} ${fmt(t.score)}</div>` : ''}${t.feedback ? `<div class="fb">${esc(t.feedback)}</div>` : ''}${t.explain ? `<div>${esc(t.explain)}</div>` : ''}${t.question ? `<div class="q">❓ ${esc(t.question)}</div>` : ''}
+        <button class="plain small say" data-say="${i}">🔊</button></div>`).join('');
+  chat.querySelectorAll('[data-say]').forEach((b) => b.onclick = () => speak(turnText(view.turns[+b.dataset.say])));
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+}
+const turnText = (t) => [t.feedback, t.explain, t.question].filter(Boolean).join(' ');
+async function learnTurn(s, st, m, text) {
   const keep = view;
+  const status = document.getElementById('learnStatus'), send = document.getElementById('send');
+  if (text != null) { view.turns.push({ role: 'me', text }); view.msgs.push({ role: 'user', content: text }); drawTurns(); }
+  else view.msgs.push({ role: 'user', content: 'EMPEZAR' });
+  status.classList.remove('hidden'); send.disabled = true; stopSpeaking();
   try {
-    m.content = await askClaude(TEACHER + `
-Estás enseñando "${s.topic}". Temario: ${s.stages.map((x, n) => `${n + 1}. ${x.title}`).join(' | ')}.
-Etapa actual: "${st.title}". Módulos de esta etapa: ${st.modules.map((x) => x.title).join(' | ')}.
-Escribí SOLO el contenido del módulo que te pidan. ${lengthRule()} Sin saludo ni despedida, sin repetir el título.`,
-      [{ role: 'user', content: `Módulo: "${m.title}"` }], 700);
-    save();
-    if (view === keep) drawModule(s, st, m);
+    const sys = learnSystem(s, st, m) + `\nPaso actual: ${view.step} de ${STEPS}.`;
+    const raw = await askClaude(sys + '\nDevolvé SOLO JSON válido.', view.msgs, 600);
+    const j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
+    if (view !== keep) return;
+    view.msgs.push({ role: 'assistant', content: raw });
+    let turn;
+    if (text == null) turn = { role: 'ai', explain: j.explain, question: j.question };
+    else if (j.kind === 'doubt') turn = { role: 'ai', explain: j.reply, question: j.question };
+    else {
+      const correct = clamp(j.correct), clarity = clamp(j.clarity);
+      view.answers.push({ correct, clarity });
+      const score = (correct + clarity) / 2;
+      view.step++;
+      if (view.step > STEPS || !j.question) {
+        m.content = m.content || view.turns.filter((t) => t.explain).map((t) => t.explain).join(' ');
+        view.lastFeedback = j.feedback;
+        return finishExam(s);
+      }
+      turn = { role: 'ai', score, feedback: j.feedback, explain: j.explain, question: j.question };
+    }
+    view.turns.push(turn);
+    render();
+    if (settings.autoRead) speak(turnText(turn));
   } catch (e) {
-    if (view === keep) document.getElementById('modBody').innerHTML = `<p class="err">${esc(e.message)}</p><button class="soft" id="retry">Reintentar</button>`;
-    const r = document.getElementById('retry'); if (r) r.onclick = () => render();
+    if (view !== keep) return;
+    view.msgs.pop(); if (text != null) view.turns.pop(); drawTurns();
+    status.classList.add('hidden'); send.disabled = false; alertBox(e.message);
   }
-}
-function drawModule(s, st, m) {
-  m.seen = true; save();
-  document.getElementById('modBody').innerHTML = `
-    <div class="row" style="margin:10px 0 14px">${listenBtn('mod')}<button class="plain small" id="shorter">✂ Más corto</button></div>
-    <div class="lesson">${esc(m.content)}</div>
-    <div class="row" style="margin-top:24px">
-      ${view.mi > 0 ? '<button class="soft" id="prev">← Anterior</button>' : ''}
-      <span class="grow"></span>
-      <button id="toExam">Listo, tomame examen →</button>
-    </div>
-    <h2>¿Tenés una duda?</h2>
-    <div class="chat" id="chat">${m.chat.map((c) => `<div class="msg ${c.role === 'user' ? 'me' : 'ai'}">${esc(c.content)}</div>`).join('')}</div>
-    <div class="row" style="margin-top:10px"><input class="grow" id="q" placeholder="Escribí o dictá tu pregunta"><button id="ask">Preguntar</button></div>`;
-  const lb = app.querySelector('[data-speak]');
-  lb.onclick = () => speak(m.title + '. ' + m.content, lb);
-  document.getElementById('shorter').onclick = async (e) => {
-    const b = e.currentTarget; b.disabled = true; b.textContent = 'Resumiendo…';
-    try {
-      m.content = await askClaude(TEACHER, [{ role: 'user', content: `Resumí este texto a la mitad o menos (máximo 40 palabras), simple y directo, sin perder la idea principal:\n${m.content}` }], 300);
-      save(); stopSpeaking(); drawModule(s, st, m);
-    } catch (err) { b.disabled = false; b.textContent = '✂ Más corto'; alertBox(err.message); }
-  };
-  const p = document.getElementById('prev'); if (p) p.onclick = () => go('module', { sid: s.id, si: view.si, mi: view.mi - 1 }, false);
-  const te = document.getElementById('toExam'); te.onclick = () => startModuleExam(s, view.si, view.mi, te);
-  const q = document.getElementById('q'), ask = document.getElementById('ask');
-  q.onkeydown = (e) => { if (e.key === 'Enter') ask.click(); };
-  ask.onclick = async () => {
-    const text = q.value.trim(); if (!text) return;
-    q.value = ''; ask.disabled = true;
-    m.chat.push({ role: 'user', content: text }); drawChat(m);
-    try {
-      const reply = await askClaude(TEACHER + ` Estás en el módulo "${m.title}" del tema "${s.topic}". Este es el contenido que leyó el alumno:\n${m.content}\nRespondé su duda ${settings.length === 'corto' ? 'en 1 a 3 frases cortas' : 'en menos de 100 palabras'}.`,
-        m.chat.slice(-12).map((c) => ({ role: c.role, content: c.content })), 600);
-      m.chat.push({ role: 'assistant', content: reply }); save(); drawChat(m);
-      if (settings.autoRead) speak(reply);
-    } catch (e) { m.chat.pop(); drawChat(m); alertBox(e.message); }
-    ask.disabled = false;
-  };
-  if (settings.autoRead) speak(m.title + '. ' + m.content, lb);
-}
-function drawChat(m) {
-  document.getElementById('chat').innerHTML = m.chat.map((c) => `<div class="msg ${c.role === 'user' ? 'me' : 'ai'}">${esc(c.content)}</div>`).join('');
 }
 
 // ---------- Exámenes ----------
@@ -658,7 +666,7 @@ function finishExam(s) {
       if (s.current === view.si) s.current = Math.min(view.si + 1, s.stages.length - 1);
     }
     save();
-    return go('result', { sid: s.id, si: view.si, mi: view.mi, type: 'modulo', score, correct, clarity, unlocked }, false);
+    return go('result', { sid: s.id, si: view.si, mi: view.mi, type: 'modulo', score, correct, clarity, unlocked, feedback: view.lastFeedback }, false);
   }
   st.exams.push({ type: view.type, date: Date.now(), score, correct, clarity });
   if (cfg.unlocks && score >= PASS && !st.done) {
@@ -686,6 +694,7 @@ views.result = () => {
         <div class="result-num">${fmt(view.score)}</div>
         <div class="result-level">Quedaste en ${levelOf(view.score)[1]}</div>
         <div class="result-joke">${esc(view.joke)}</div>
+        ${view.feedback ? `<div class="result-joke" style="font-style:normal">${esc(view.feedback)}</div>` : ""}
         <div class="result-msg">${msg}</div>
         <div class="result-sub"><span>Corrección <b>${fmt(view.correct)}</b></span><span>Claridad <b>${fmt(view.clarity)}</b></span></div>
         ${isMod ? `
