@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 33;
+const APP_VERSION = 34;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -760,10 +760,11 @@ async function ensureModules(s, i) {
 // El profe explica una idea en 1 o 2 frases y enseguida pregunta. Corrige, explica la siguiente idea y vuelve a preguntar.
 // Son 2 pasos por módulo; si el alumno pide más detalle, recién ahí se extiende. Al final: puntaje, nivel y chiste.
 const STEPS = 2;
+const Q_RULE = 'REGLA DE ORO DE LAS PREGUNTAS: la pregunta NUNCA puede contener, insinuar ni dejar adivinar la respuesta. No repitas en la pregunta las palabras clave de la respuesta, no hagas preguntas de sí/no ni de opción múltiple, no pongas la respuesta entre paréntesis o como ejemplo. Preguntá por el porqué, el cómo, para qué sirve, qué pasaría si…, o pedí un ejemplo propio, de modo que haya que pensar o recordar.';
 function learnSystem(s, st, m) {
   return teacher() + `
 Estás enseñando "${s.topic}". Etapa: "${st.title}". Módulo: "${m.title}".
-Enseñás este módulo en ${STEPS} pasos, como una charla. En cada paso explicás UNA sola idea en 1 o 2 frases muy cortas (máximo 30 palabras en total) y enseguida hacés UNA pregunta corta sobre esa idea.
+Enseñás este módulo en ${STEPS} pasos, como una charla. En cada paso explicás UNA sola idea en 1 o 2 frases muy cortas (máximo 30 palabras en total) y enseguida hacés UNA pregunta corta sobre esa idea. La pregunta no puede responderse copiando palabras de tu explicación: pedí aplicarla, dar un ejemplo o explicar el porqué con sus palabras. ${Q_RULE}
 Siempre respondés SOLO con JSON válido, sin texto extra:
 - Si el mensaje es "EMPEZAR": {"explain":"idea 1","question":"pregunta 1"}
 - Si el alumno responde la pregunta: {"kind":"answer","correct":1-10,"clarity":1-10,"feedback":"una o dos frases cortas, claras y cálidas, SIN chistes ni ironía (la app ya hizo el chiste): si estuvo bien o qué faltó","explain":"siguiente idea (vacío si ya fue el último paso)","question":"siguiente pregunta (vacío si ya fue el último paso)"}
@@ -879,7 +880,7 @@ async function startModuleExam(s, si, mi, btn) {
   btn.disabled = true; btn.textContent = 'Preparando examen…';
   try {
     const j = await askJSON(teacher(), `Tema: ${s.topic}. El alumno acaba de leer este módulo, "${m.title}":\n${m.content}\n` +
-      'Armá 2 preguntas abiertas y cortas sobre ESTE contenido, que se respondan en 1 o 2 frases. Forma: {"questions":["...","..."]}', 600);
+      'Armá 2 preguntas abiertas y cortas sobre ESTE contenido, que se respondan en 1 o 2 frases. ' + Q_RULE + ' Forma: {"questions":["...","..."]}', 600);
     go('exam', { sid: s.id, si, mi, type: 'modulo', questions: j.questions.slice(0, 2), answers: [], idx: 0 }, false);
   } catch (e) { btn.disabled = false; btn.textContent = 'Listo, tomame examen →'; alertBox(e.message); }
 }
@@ -909,7 +910,7 @@ async function startExam(s, si, type, btn) {
     : 'preguntas abiertas y concretas que se respondan en 1 a 4 frases';
   try {
     const j = await askJSON(teacher(), `Tema: ${s.topic}. Contenido a evaluar: ${scope}.
-Armá ${cfg.n} ${kind}, variadas, de dificultad progresiva.${type === 'final' ? ' Es el EXAMEN FINAL: repartí las preguntas entre TODAS las etapas, y que al menos una pida relacionar ideas de etapas distintas.' : ''} Forma: {"questions":["...","..."]}`, 1200);
+Armá ${cfg.n} ${kind}, variadas, de dificultad progresiva. ${Q_RULE}${type === 'final' ? ' Es el EXAMEN FINAL: repartí las preguntas entre TODAS las etapas, y que al menos una pida relacionar ideas de etapas distintas.' : ''} Forma: {"questions":["...","..."]}`, 1200);
     go('exam', { sid: s.id, si, type, questions: j.questions.slice(0, cfg.n), answers: [], idx: 0 });
   } catch (e) { btn.disabled = false; btn.querySelector('span').textContent = cfg.desc; alertBox(e.message); }
 }
