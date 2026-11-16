@@ -3,7 +3,7 @@
 
 const MODEL = 'claude-sonnet-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 const PASS = 6; // nota mínima para aprobar el examen de etapa
 
 const app = document.getElementById('app');
@@ -146,7 +146,26 @@ function setHeader(title) {
   document.getElementById('settingsBtn').classList.toggle('hidden', view.name === 'settings');
 }
 const views = {};
-function render() { (views[view.name] || views.home)(); }
+function render() {
+  (views[view.name] || views.home)();
+  app.classList.remove('enter'); void app.offsetWidth; app.classList.add('enter'); // animación de entrada
+}
+// Pequeña vibración al tocar botones (en celulares que lo permiten).
+document.addEventListener('pointerdown', (e) => { if (e.target.closest('button, .tap, .mod') && navigator.vibrate) { try { navigator.vibrate(8); } catch {} } });
+function confetti() {
+  const colors = ['#f6c344', '#ffffff', '#ff8fa3', '#7ad3a8', '#8fb8ff'];
+  const box = document.createElement('div'); box.className = 'confetti';
+  for (let i = 0; i < 60; i++) {
+    const c = document.createElement('i');
+    c.style.left = Math.random() * 100 + '%';
+    c.style.background = colors[i % colors.length];
+    c.style.animationDelay = Math.random() * 0.6 + 's';
+    c.style.animationDuration = 1.8 + Math.random() * 1.4 + 's';
+    c.style.transform = `rotate(${Math.random() * 360}deg)`;
+    box.appendChild(c);
+  }
+  document.body.appendChild(box); setTimeout(() => box.remove(), 4000);
+}
 const getSubj = () => subjects.find((s) => s.id === view.sid);
 
 // ---------- Configuración ----------
@@ -221,8 +240,9 @@ views.home = () => {
     const rows = scored.map((x) => { const best = stageScore(x);
       return `<div class="between score-row"><span>${esc(x.title)}</span><span class="pill ${best >= PASS ? 'ok' : 'bad'}">${fmt(best)}</span></div>`; }).join('');
     return `<div class="card tap" data-sid="${s.id}">
-      <div class="between"><b>${esc(s.topic)}</b>${avg != null ? `<span class="pill ${avg >= PASS ? 'ok' : 'bad'}">Promedio ${fmt(avg)}</span>` : ''}</div>
+      <div class="between"><b><span class="emoji">${s.emoji || '📘'}</span> ${esc(s.topic)}</b>${avg != null ? `<span class="pill ${avg >= PASS ? 'ok' : 'bad'}">${levelOf(avg)[2]} ${fmt(avg)}</span>` : ''}</div>
       <div class="bar"><div style="width:${(100 * done) / s.stages.length}%"></div></div>
+      ${avg != null ? `<div class="small" style="margin-top:8px;font-weight:600">${levelOf(avg)[2]} ${levelOf(avg)[1]}</div>` : ''}
       <div class="muted small" style="margin-top:6px">Aprendiste ${done} de ${s.stages.length} etapas${scored.length ? ` · ${((n) => n + (n === 1 ? ' examen rendido' : ' exámenes rendidos'))(s.stages.reduce((n, x) => n + x.exams.length + (x.modules || []).reduce((a, m) => a + (m.scores || []).length, 0), 0))}` : ' · todavía sin exámenes'}</div>
       ${rows ? `<div class="score-list">${rows}</div>` : ''}</div>`;
   }).join('');
@@ -248,11 +268,11 @@ async function createSubject(topic) {
   try {
     const j = await askJSON(
       'Sos un profesor experto que arma planes de estudio para un adulto hispanohablante que estudia desde el celular. ' +
-      'Forma: {"topic":"nombre corto","description":"una frase","stages":[{"title":"...","summary":"una frase","modules":[{"title":"título corto y concreto"}]}]}. ' +
+      'Forma: {"topic":"nombre corto","emoji":"un emoji que represente el tema","description":"una frase","stages":[{"title":"...","summary":"una frase","modules":[{"title":"título corto y concreto"}]}]}. ' +
       'Entre 5 y 8 etapas, de lo básico a lo avanzado. Cada etapa con 3 a 5 módulos MUY cortos (cada uno se lee en 1 o 2 minutos).',
       'Quiero aprender: ' + topic, 3000);
     const s = {
-      id: Date.now().toString(36), topic: j.topic || topic, description: j.description || '', current: 0,
+      id: Date.now().toString(36), topic: j.topic || topic, emoji: j.emoji || '📘', description: j.description || '', current: 0,
       stages: j.stages.map((x) => ({ title: x.title, summary: x.summary, done: false, exams: [],
         modules: (x.modules || []).map((m) => ({ title: m.title || m, content: null, seen: false, chat: [] })) })),
     };
@@ -278,7 +298,7 @@ views.subject = () => {
           <div class="grow" style="flex:1"><b>${esc(st.title)}</b><div class="muted small">${esc(st.summary)}${state === 'locked' ? ' · 🔒 Se habilita al aprobar la anterior' : ''}</div></div>
           ${best != null ? `<span class="pill ${best >= PASS ? 'ok' : 'bad'}">${fmt(best)}</span>` : ''}</div>
         ${open && state !== 'locked' ? `
-          <div class="modules">${(st.modules || []).map((m, k) => `<div class="mod ${modBest(m) >= PASS ? 'seen' : ''}" data-mod="${i}:${k}"><span class="dot"></span><span style="flex:1">${esc(m.title)}</span>${modBest(m) != null ? `<span class="pill ${modBest(m) >= PASS ? 'ok' : 'bad'}">${fmt(modBest(m))}</span>` : ''}</div>`).join('')}
+          <div class="modules">${(st.modules || []).map((m, k) => `<div class="mod ${modBest(m) >= PASS ? 'seen' : ''}" data-mod="${i}:${k}"><span class="dot">${modBest(m) >= PASS ? '⭐' : ''}</span><span style="flex:1">${esc(m.title)}</span>${modBest(m) != null ? `<span class="pill ${modBest(m) >= PASS ? 'ok' : 'bad'}">${fmt(modBest(m))}</span>` : ''}</div>`).join('')}
             ${!st.modules || !st.modules.length ? '<div class="muted small">Tocá "Empezar" para armar los módulos.</div>' : ''}</div>
           <div class="stage-actions">
             <button data-start="${i}">${(st.modules || []).some((m) => m.seen) ? 'Seguir' : 'Empezar'}</button>
@@ -480,6 +500,13 @@ views.exam = () => {
     } catch (e) { send.disabled = false; document.getElementById('examStatus').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
   };
 };
+// Un nivel chistoso para cada nota del 0 al 10.
+const LEVELS = [
+  ['Nivel Zombie', '🧟'], ['Nivel Piedra', '🪨'], ['Nivel Dormilón', '😴'], ['Nivel Papa Tibia', '🥔'],
+  ['Nivel Tortuga', '🐢'], ['Nivel Casi Casi', '🤏'], ['Nivel Aprendiz Ninja', '🥷'], ['Nivel Crack', '😎'],
+  ['Nivel Genio', '🧠'], ['Nivel Leyenda', '🦸'], ['Nivel Dios', '⚡'],
+];
+const levelOf = (n) => { const [name, emoji] = LEVELS[Math.max(0, Math.min(10, Math.floor(n)))]; return [n, name, emoji]; };
 const modBest = (m) => (m.scores && m.scores.length ? Math.max(...m.scores) : null);
 function stageScore(st) {
   const xs = (st.modules || []).map(modBest).filter((x) => x != null).concat(st.exams.map((e) => e.score));
@@ -523,6 +550,8 @@ views.result = () => {
     <div class="result-screen ${ok ? 'pass' : 'fail'}">
       <div class="result-inner">
         <div class="result-topic">${isMod ? esc(m.title) : esc(cfg.name) + ' · ' + esc(st.title)}</div>
+        <div class="result-emoji">${levelOf(view.score)[2]}</div>
+        <div class="result-level">${levelOf(view.score)[1]}</div>
         <div class="result-label">Te sacaste</div>
         <div class="result-num">${fmt(view.score)}</div>
         <div class="result-msg">${msg}</div>
@@ -536,7 +565,8 @@ views.result = () => {
           <button class="block result-btn ghost" id="again">Elegir otro examen</button>`}
       </div>
     </div>`;
-  speak(`Te sacaste ${fmt(view.score)}. ${msg}`);
+  speak(`Te sacaste ${fmt(view.score)}. ${levelOf(view.score)[1]}. ${msg}`);
+  if (ok) confetti();
   document.getElementById('toSubj').onclick = () => { stack.length = 0; view = { name: 'home' }; go('subject', { sid: s.id }); };
   const ag = document.getElementById('again'); if (ag) ag.onclick = () => go('examMenu', { sid: s.id, si: view.si }, false);
   const nm = document.getElementById('nextMod'); if (nm) nm.onclick = () => go('module', { sid: s.id, si: view.si, mi: view.mi + 1 }, false);
