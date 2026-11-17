@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 41;
+const APP_VERSION = 42;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -920,6 +920,24 @@ const secs = (n) => `${Math.floor(n / 60) ? Math.floor(n / 60) + ' min ' : ''}${
 
 views.compete = () => {
   setHeader('Competencia');
+  // Para competir y chatear hay que estar aprobado por el administrador, aunque tengas tu propia clave.
+  const acc = settings.access || {};
+  if (acc.status !== 'approved' && !acc.is_admin) {
+    app.innerHTML = `<div class="card ask-card"><div class="ask-q">⚔️ Competencia</div>
+      <p>Para competir, ver a los demás y usar el chat, el administrador tiene que aprobarte.</p>
+      ${acc.status === 'pending' ? '<p><b>⏳ Ya pediste acceso.</b> Avisale al administrador para que te apruebe, y después volvé a entrar acá.</p>'
+        : `<button class="block" id="askComp">🙋 Pedir acceso${settings.name ? ' como ' + esc(settings.name) : ''}</button>`}
+      <div id="askMsg" class="muted small" style="margin-top:8px"></div></div>`;
+    const b = document.getElementById('askComp');
+    if (b) b.onclick = async () => {
+      if (!settings.name) { document.getElementById('askMsg').textContent = 'Primero poné tu nombre en Inicio.'; return; }
+      b.disabled = true;
+      try { const s = await sbRpc('request_access', { p_player: settings.playerId, p_name: settings.name }); settings.access = { ...acc, status: s || 'pending' }; save(); render(); }
+      catch (e) { b.disabled = false; document.getElementById('askMsg').textContent = e.message; }
+    };
+    refreshAccess().then((a) => { if (view.name === 'compete' && a && (a.status === 'approved' || a.is_admin) && acc.status !== a.status) render(); });
+    return;
+  }
   const draw = () => {
     const pend = (d) => d.for_me && !d.results.some((r) => r.me && r.done);
     const ds = (view.duels || []).slice().sort((a, b) => pend(b) - pend(a));
