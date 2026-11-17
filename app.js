@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 45;
+const APP_VERSION = 46;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -135,7 +135,7 @@ function speak(text, btn) {
   if (btn) btn.textContent = '■ Parar';
   const token = speakToken;
   // El texto puede traer marcas {{s:nombre}}: ahí suena el sonido del personaje.
-  const segs = String(text).split(/\{\{(s:\w+|p)\}\}/);
+  const segs = String(text).split(/\{\{(s:[\w.~]+|p)\}\}/);
   return (async () => {
     for (let i = 0; i < segs.length; i++) {
       if (token !== speakToken) return;
@@ -239,9 +239,9 @@ async function speakPiper(clean, token) {
   }
 }
 // ---- Sonidos de personajes: se generan en el momento con Web Audio (gratis, sin archivos) ----
-let actx = null, sfxOut = null;
+let actx = null, sfxOut = null, sfxPitch = 1;
 function audioCtx() {
-  if (!actx) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; actx = new C(); }
+  if (!actx) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; actx = new C(); loadRecs(actx); }
   if (actx.state === 'suspended') actx.resume();
   return actx;
 }
@@ -250,6 +250,7 @@ function stopSfx() { if (sfxOut) { try { sfxOut.disconnect(); } catch {} sfxOut 
 // tono: frecuencia que va de f a f2, con volumen que sube y baja
 function tone(c, out, t, dur, f, f2, type = 'sine', vol = 0.3, vib = 0) {
   const o = c.createOscillator(), g = c.createGain();
+  f *= sfxPitch; if (f2) f2 *= sfxPitch;
   o.type = type; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f2 || f, t + dur);
   if (vib) { const l = c.createOscillator(), lg = c.createGain(); l.frequency.value = vib; lg.gain.value = f * 0.08; l.connect(lg).connect(o.frequency); l.start(t); l.stop(t + dur); }
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.03, dur / 4)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -305,7 +306,7 @@ function curve(param, pts, t, dur, k = 1) {
   for (let i = 1; i < pts.length; i++) param.linearRampToValueAtTime(pts[i][1] * k, t + pts[i][0] * dur);
 }
 function voice(c, out, t, dur, o) {
-  const k = 1 + (Math.random() - 0.5) * 0.08; // cada vez suena un poquito distinto, como un animal de verdad
+  const k = (1 + (Math.random() - 0.5) * 0.08) * sfxPitch; // cada vez suena un poquito distinto, como un animal de verdad
   const src = c.createGain();
   const osc = c.createOscillator(); osc.type = o.type || 'sawtooth'; curve(osc.frequency, o.f, t, dur, k);
   if (o.vib) { const l = c.createOscillator(), lg = c.createGain(); l.frequency.value = o.vib; lg.gain.value = o.f[0][1] * (o.vibD || 0.03); l.connect(lg).connect(osc.frequency); l.start(t); l.stop(t + dur + .05); }
@@ -367,10 +368,35 @@ const REAL = {
 // mismo volumen para todos (medido): unos salían muy fuertes y otros muy bajitos
 const REAL_GAIN = { sadtrombone: 1.2, moo: 1.15, meow: .4, bark: .5, quack: 1.6, croak: 1.7, hoot: .45, coo: .32, neigh: 2.2, heehaw: 1.6, roar: .9, purr: 1.1, honk: 1.8, eagle: .63, monkey: 1.4, buzz: 1.35, squeak: .38, chirp: 2, whale: .3, dolphin: 2 };
 for (const k in REAL) SOUNDS[k] = (c, o, t) => { const g = c.createGain(); g.gain.value = REAL_GAIN[k] || 1; g.connect(o); return REAL[k](c, g, t); };
-function playSfx(name, once) {
+// ---- Grabaciones de verdad (dominio público CC0, de github.com/EternityForest/free-sfx) ----
+// Se bajan una vez y quedan guardadas. Si todavía no llegaron, suena la versión generada.
+const REC = ['owl', 'lion', 'cricketr', 'fly', 'cicada', 'beast', 'dino1', 'dino3', 'raven', 'laugh', 'yawn', 'cough', 'sniff', 'whistle', 'callwhistle', 'gasp', 'clap', 'sip', 'gulp', 'fruit', 'djembe', 'ghost', 'bell', 'gong', 'shipbell', 'cannon', 'springr', 'plop', 'splash', 'toilet', 'dishes', 'paper', 'glass', 'pot', 'dooropen', 'weird', 'kettle', 'phone', 'record', 'bubbling', 'victory', 'success', 'gameover', 'powerup', 'teleport', 'magicr', 'cymbal', 'monster', 'voice1', 'voice3'];
+const REC_FB = { owl: 'hoot', lion: 'roar', cricketr: 'cricket', fly: 'buzz', cicada: 'cricket', beast: 'roar', dino1: 'roar', dino3: 'roar', raven: 'eagle', laugh: 'monkey', yawn: 'moo', cough: 'thud', sniff: 'swoosh', whistle: 'magic', callwhistle: 'magic', gasp: 'swoosh', clap: 'drum', sip: 'bubble', gulp: 'bloop', fruit: 'squish', djembe: 'drum', ghost: 'choir', bell: 'ding', gong: 'ding', shipbell: 'ding', cannon: 'thunder', springr: 'boing', plop: 'pop', splash: 'bubble', toilet: 'bubble', dishes: 'robot', paper: 'swoosh', glass: 'ding', pot: 'thud', dooropen: 'squish', weird: 'laser', kettle: 'rocket', phone: 'robot', record: 'guitar', bubbling: 'bubble', victory: 'fanfare', success: 'tada', gameover: 'horn', powerup: 'hero', teleport: 'laser', magicr: 'magic', cymbal: 'thunder', monster: 'roar', voice1: 'monkey', voice3: 'monkey' };
+const REC_UP = { hoot: 'owl', roar: 'lion', cricket: 'cricketr' }; // los que antes eran inventados y ahora tienen grabación
+const recBuf = {}; let recLoading = null;
+function loadRecs(c) {
+  if (recLoading) return recLoading;
+  recLoading = Promise.all(REC.map(async (k) => { try { const r = await fetch('sfx/' + k + '.ogg'); if (r.ok) recBuf[k] = await c.decodeAudioData(await r.arrayBuffer()); } catch {} }));
+  return recLoading;
+}
+for (const k of REC) SOUNDS[k] = (c, o, t) => {
+  const b = recBuf[k]; if (!b) return SOUNDS[REC_FB[k]](c, o, t);
+  const src = c.createBufferSource(), g = c.createGain(); src.buffer = b; src.playbackRate.value = sfxPitch; g.gain.value = REC_VOL;
+  src.connect(g).connect(o); src.start(t); return b.duration / sfxPitch;
+};
+const REC_VOL = 0.85;
+// Cada personaje tiene su propio "tono": el mismo bicho no suena igual que su primo.
+const pitchOf = (name) => { let h = 0; for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) | 0; return 0.86 + (Math.abs(h) % 29) / 100; };
+const charSound = (snd, name) => (String(snd).includes('~') ? snd : snd + '~' + pitchOf(name).toFixed(2));
+let lastSfx = '', lastPitch = 0;
+function playSfx(spec, once) {
   return new Promise((res) => {
+    let [name, p] = String(spec).split('~'), pitch = +p || 1;
+    if (REC_UP[name]) name = REC_UP[name];
     const c = audioCtx(), fn = SOUNDS[name];
     if (!c || !fn) return res();
+    // Que no se repita: si toca el mismo sonido dos veces seguidas, cambia el tono.
+    if (name !== 'tick') { if (name === lastSfx && Math.abs(pitch - lastPitch) < 0.06) pitch *= lastPitch >= 1 ? 0.87 : 1.14; lastSfx = name; lastPitch = pitch; }
     try {
       stopSfx();
       // Más fuerte: subimos el volumen y un compresor evita que se distorsione.
@@ -379,7 +405,7 @@ function playSfx(name, once) {
       sfxOut.connect(comp).connect(c.destination);
       if (name !== 'tick') { const w = c.createGain(); w.gain.value = 0.35; sfxOut.connect(reverb(c)).connect(w).connect(comp); } // eco de ambiente
       // Un solo sonido, una sola vez.
-      const at = fn(c, sfxOut, c.currentTime + 0.05) + 0.1;
+      sfxPitch = pitch; let at; try { at = fn(c, sfxOut, c.currentTime + 0.05) + 0.1; } finally { sfxPitch = 1; }
       setTimeout(res, at * 1000 + 200);
     } catch { res(); }
   });
@@ -897,9 +923,11 @@ async function learnTurn(s, st, m, text) {
 }
 
 // Cada personaje se mueve según su sonido: salta, se menea, flota, pisa fuerte o gira.
-const ANIM = { hop: 'bark monkey boing croak chirp squeak quack honk pop cricket', wig: 'buzz scuttle squish meow purr laser robot',
-  flo: 'whale dolphin bubble bloop coo flutter eagle hoot magic choir', stomp: 'roar thud moo neigh heehaw thunder drum horn' };
-const animOf = (snd) => 'a-' + (Object.keys(ANIM).find((k) => ANIM[k].split(' ').includes(snd)) || 'spin');
+const ANIM = { hop: 'bark monkey boing croak chirp squeak quack honk pop cricket cricketr springr plop laugh clap fruit gulp voice1 voice3 raven callwhistle whistle',
+  wig: 'buzz scuttle squish meow purr laser robot fly cicada sniff cough phone weird dishes paper kettle toilet',
+  flo: 'whale dolphin bubble bloop coo flutter eagle hoot magic choir owl ghost bubbling splash sip yawn magicr teleport record bell shipbell',
+  stomp: 'roar thud moo neigh heehaw thunder drum horn lion beast dino1 dino3 monster cannon djembe pot gong dooropen cymbal gameover' };
+const animOf = (snd) => { snd = String(snd).split('~')[0]; return 'a-' + (Object.keys(ANIM).find((k) => ANIM[k].split(' ').includes(snd)) || 'spin'); };
 // ---------- Galería: todos los personajes, por nivel ----------
 views.characters = () => {
   setHeader('Personajes');
@@ -909,7 +937,7 @@ views.characters = () => {
     <p class="muted small">Hay <b>${all}</b> personajes. Te tocaron <b>${got}</b>. Tocá uno para escuchar su sonido.</p>
     ${LEVELS.map((l, i) => { const next = LEVELS[i + 1];
       return `<h2>${l.min >= 6 ? '🌟' : '🌱'} Nota ${fmt(l.min)}${next ? ' a ' + fmt(Math.round((next.min - 0.1) * 10) / 10) : ' a 10'}</h2>
-      <div class="char-grid">${l.chars.map((c) => `<button class="char-card ${seen.includes(c[0]) ? 'got' : ''}" data-snd="${c[4]}"><span class="char-emoji" data-anim="${animOf(c[4])}">${c[2]}</span><span>${esc(c[0])}</span>${seen.includes(c[0]) ? '<span class="char-got">✓</span>' : ''}</button>`).join('')}</div>`; }).join('')}`;
+      <div class="char-grid">${l.chars.map((c) => `<button class="char-card ${seen.includes(c[0]) ? 'got' : ''}" data-snd="${charSound(c[4], c[0])}"><span class="char-emoji" data-anim="${animOf(c[4])}">${c[2]}</span><span>${esc(c[0])}</span>${seen.includes(c[0]) ? '<span class="char-got">✓</span>' : ''}</button>`).join('')}</div>`; }).join('')}`;
   app.querySelectorAll('[data-snd]').forEach((el) => el.onclick = () => { audioCtx(); playSfx(el.dataset.snd, true);
     const e = el.querySelector('.char-emoji'); e.classList.remove(e.dataset.anim); void e.offsetWidth; e.classList.add(e.dataset.anim); });
 };
@@ -918,10 +946,21 @@ views.characters = () => {
 // Dos (o más) personas contestan las mismas preguntas de escuela. 20 segundos cada una.
 // Puntos: hasta 100 por respuesta correcta + 1 punto por cada segundo que te sobró (si estuvo bien).
 // Acá NO habla el profe: ni chistes, ni personajes, ni confidencias. Solo puntaje.
-const DUEL_N = 8, DUEL_T = 20;
+const DUEL_N = 8, DUEL_T = 20, DUEL_MAX = 3;
+// Terminó cuando jugaron todos los que tenían que jugar (2 o 3). Si fue por link, alcanza con 2 que terminaron.
+const duelAllDone = (d) => { const rs = d.results || []; return rs.length > 1 && rs.every((r) => r.done) && (!d.expected || rs.length >= d.expected); };
 const DUEL_TOPICS = [['mezcla', '🎲 Mezcla de todo'], ['matematica', '➗ Matemática'], ['lengua', '📖 Lengua'], ['naturales', '🌱 Ciencias naturales'],
   ['historia', '🇦🇷 Historia'], ['geografia', '🗺️ Geografía'], ['cultura', '🧠 Cultura general']];
 const duelTopicName = (k) => (DUEL_TOPICS.find((x) => x[0] === k) || DUEL_TOPICS[0])[1].replace(/^\S+\s/, '');
+// Temas ya usados: tus cursos, los "Otro tema" que escribiste y los de duelos anteriores. Aparecen como opciones.
+function usedTopics(duels) {
+  const fixed = DUEL_TOPICS.map((x) => duelTopicName(x[0]).toLowerCase()), seen = new Set(), out = [];
+  const add = (t, e) => { t = String(t || '').trim().slice(0, 60); const k = t.toLowerCase(); if (!t || seen.has(k) || fixed.includes(k)) return; seen.add(k); out.push([t, e]); };
+  store.get('profe-duel-topics', []).forEach((t) => add(t, '⚔️'));
+  subjects.forEach((x) => add(x.topic, x.emoji || '📘'));
+  (duels || []).forEach((d) => add(d.topic, '⚔️'));
+  return out.slice(0, 10);
+}
 const duelLink = (id) => `${APP_LINK}?duelo=${id}`;
 // Si alguien abrió un link de duelo, lo guardamos hasta que tenga acceso.
 try { const q = new URLSearchParams(location.search).get('duelo'); if (q && /^[a-z0-9]{6,12}$/.test(q)) { store.set('profe-duel-pending', q); history.replaceState(null, '', location.pathname); } } catch {}
@@ -949,17 +988,18 @@ views.compete = () => {
     refreshAccess().then((a) => { if (view.name === 'compete' && a && (a.status === 'approved' || a.is_admin) && acc.status !== a.status) render(); });
     return;
   }
+  const rvs = () => view.rvs || [];
   const draw = () => {
-    const pend = (d) => d.for_me && !d.results.some((r) => r.me && r.done);
+    const pend = (d) => d.for_me && !d.declined && !d.results.some((r) => r.me && r.done);
     const ds = (view.duels || []).slice().sort((a, b) => pend(b) - pend(a));
     app.innerHTML = `
       <div class="card ask-card"><div class="ask-q">⚔️ Duelo</div>
         <div class="muted small">${DUEL_N} preguntas de escuela. Tenés ${DUEL_T} segundos para cada una. Por cada respuesta bien sumás hasta 100 puntos, y además 1 punto por cada segundo que te sobró. Gana el que suma más.</div>
         <div class="muted small" style="margin-top:10px">Elegí el tema:</div>
-        <div class="sug-wrap">${DUEL_TOPICS.map(([k, l]) => `<button class="chip ${(view.dt || 'mezcla') === k ? 'on' : ''}" data-dt="${k}">${l}</button>`).join('')}<button class="chip ${view.dt === 'libre' ? 'on' : ''}" data-dt="libre">✏️ Otro tema</button></div>
+        <div class="sug-wrap">${DUEL_TOPICS.map(([k, l]) => `<button class="chip ${(view.dt || 'mezcla') === k ? 'on' : ''}" data-dt="${k}">${l}</button>`).join('')}${usedTopics(view.duels).map(([t, e], k) => `<button class="chip ${view.dt === 'libre' && (view.free || '').trim().toLowerCase() === t.toLowerCase() ? 'on' : ''}" data-ut="${k}">${e} ${esc(t)}</button>`).join('')}<button class="chip ${view.dt === 'libre' ? 'on' : ''}" data-dt="libre">✏️ Otro tema</button></div>
         ${view.dt === 'libre' ? `<input id="freeTopic" class="ask-input" style="margin-top:8px" placeholder="Escribí el tema. Ej: los planetas, fútbol, animales" value="${esc(view.free || '')}">` : ''}
-        <div class="muted small" style="margin-top:10px">¿A quién desafiás?</div>
-        <div class="sug-wrap"><button class="chip ${!view.rv ? 'on' : ''}" data-rv="">🔗 Por link a cualquiera</button>${(view.players || []).map((pl) => `<button class="chip ${view.rv === pl.id ? 'on' : ''}" data-rv="${pl.id}">👤 ${esc(pl.name)}</button>`).join('')}</div>
+        <div class="muted small" style="margin-top:10px">¿A quién desafiás? Podés elegir hasta 2 (juegan 3 en total).</div>
+        <div class="sug-wrap"><button class="chip ${!rvs().length ? 'on' : ''}" data-rv="">🔗 Por link a cualquiera</button>${(view.players || []).map((pl) => `<button class="chip ${rvs().includes(pl.id) ? 'on' : ''}" data-rv="${pl.id}">👤 ${esc(pl.name)}</button>`).join('')}</div>
         <div class="muted small" style="margin-top:10px">¿Qué se apuesta? (opcional, solo de palabra)</div>
         <input id="duelBet" class="ask-input" maxlength="120" style="margin-top:6px" placeholder="Ej: el que pierde lava los platos" value="${esc(view.bet || '')}">
         <button class="block" id="newDuel" style="margin-top:12px">Crear duelo y desafiar →</button>
@@ -969,19 +1009,24 @@ views.compete = () => {
       ${view.loading ? '<p class="muted">Cargando…</p>' : view.err ? `<p class="muted">${esc(view.err)}</p>` : ds.length ? ds.map((d) => {
         const me = d.results.find((r) => r.me), others = d.results.filter((r) => !r.me);
         return `<div class="card tap duel-row ${pend(d) ? 'duel-new' : ''}" data-duel="${d.id}">${pend(d) ? `<div class="duel-badge">⚔️ ¡${esc(d.creator_name)} te desafió!</div>` : ''}<div class="between"><b>${esc(d.topic)}</b><span class="muted small">${new Date(d.created_at).toLocaleDateString('es-AR')}</span></div>${d.bet ? `<div class="small">🎲 Se apuesta: ${esc(d.bet)}</div>` : ''}
-          <div class="small" style="margin-top:6px">${d.results.length ? d.results.map((r, i) => `${i === 0 && r.done && d.results.length > 1 ? '🏆 ' : ''}${esc(r.me ? 'Vos' : r.name)}: <b>${r.points}</b>${r.done ? '' : ' (jugando)'}`).join(' · ') : 'Nadie jugó todavía'}</div>
-          ${d.declined && d.mine ? `<div class="small duel-declined">🙅 ${esc(d.target_name || 'Tu rival')} rechazó el desafío</div>` : ''}
-          ${!me || !me.done ? '<div class="small" style="margin-top:4px;color:var(--accent);font-weight:700">Te toca jugar →</div>' : !others.length ? `<div class="muted small" style="margin-top:4px">${d.target_name && d.mine ? `Esperando a ${esc(d.target_name)}…` : 'Esperando rival. Compartí el link.'}</div>` : ''}</div>`;
+          <div class="small" style="margin-top:6px">${d.results.length ? d.results.map((r, i) => `${i === 0 && duelAllDone(d) ? '🏆 ' : ''}${esc(r.me ? 'Vos' : r.name)}: <b>${r.points}</b>${r.done ? '' : ' (jugando)'}`).join(' · ') : 'Nadie jugó todavía'}</div>
+          ${d.declined && d.mine ? `<div class="small duel-declined">🙅 ${esc(d.declined_names || 'Tu rival')} rechazó el desafío</div>` : ''}
+          ${!me || !me.done ? '<div class="small" style="margin-top:4px;color:var(--accent);font-weight:700">Te toca jugar →</div>' : !duelAllDone(d) ? `<div class="muted small" style="margin-top:4px">${d.target_name && d.mine ? `Esperando a ${esc(d.target_name)}…` : others.length ? 'Faltan jugadores o están jugando…' : 'Esperando rival. Compartí el link.'}</div>` : ''}</div>`;
       }).join('') : '<p class="muted">Todavía no tenés duelos. ¡Creá uno y mandale el link a alguien!</p>'}
       <button class="block soft" id="toRank2" style="margin-top:12px">🏆 Ver el ranking</button>`;
     app.querySelectorAll('[data-dt]').forEach((el) => el.onclick = () => { view.dt = el.dataset.dt; draw(); const f = document.getElementById('freeTopic'); if (f) f.focus(); });
-    app.querySelectorAll('[data-rv]').forEach((el) => el.onclick = () => { view.rv = el.dataset.rv || null; draw(); });
+    app.querySelectorAll('[data-ut]').forEach((el) => el.onclick = () => { view.dt = 'libre'; view.free = usedTopics(view.duels)[+el.dataset.ut][0]; draw(); });
+    app.querySelectorAll('[data-rv]').forEach((el) => el.onclick = () => {
+      const id = el.dataset.rv; let l = rvs();
+      if (!id) l = []; else if (l.includes(id)) l = l.filter((x) => x !== id); else if (l.length >= 2) return toast('Máximo 2 rivales: el duelo es de hasta 3 personas.'); else l = l.concat(id);
+      view.rvs = l; draw();
+    });
     const ft = document.getElementById('freeTopic'); if (ft) ft.oninput = () => { view.free = ft.value; };
     const bt = document.getElementById('duelBet'); bt.oninput = () => { view.bet = bt.value; };
     document.getElementById('toChat').onclick = () => go('chat', { room: 'general' });
     app.querySelectorAll('[data-duel]').forEach((el) => el.onclick = () => go('duel', { id: el.dataset.duel }));
     document.getElementById('toRank2').onclick = () => go('ranking');
-    document.getElementById('newDuel').onclick = () => createDuel(view.dt || 'mezcla', view.free, view.rv, (view.players || []).find((x) => x.id === view.rv), view.bet);
+    document.getElementById('newDuel').onclick = () => createDuel(view.dt || 'mezcla', view.free, rvs(), (view.players || []).filter((x) => rvs().includes(x.id)), view.bet);
   };
   draw();
   if (!view.players) { view.players = []; sbRpc('duel_players', { p_player: settings.playerId }).then((x) => { view.players = x || []; if (view.name === 'compete') draw(); }).catch(() => {}); }
@@ -991,7 +1036,7 @@ views.compete = () => {
       .finally(() => { view.loading = false; if (view.name === 'compete') draw(); });
   }
 };
-async function createDuel(topicKey, free, target, targetObj, bet) {
+async function createDuel(topicKey, free, targets, targetObjs, bet) {
   const btn = document.getElementById('newDuel'), msg = document.getElementById('duelMsg');
   if (!settings.name) { msg.textContent = 'Primero poné tu nombre en Inicio o en Configuración.'; return; }
   const freeT = topicKey === 'libre' ? String(free || '').trim().slice(0, 60) : '';
@@ -1005,10 +1050,11 @@ async function createDuel(topicKey, free, target, targetObj, bet) {
       `Cada pregunta: corta (máximo 15 palabras), clara, con UNA sola respuesta correcta y corta (una palabra, un número o una frase corta), que se pueda contestar en menos de 20 segundos. Los grupos van variados y de fácil a media. Nada de opción múltiple. ${Q_RULE} Forma: {"slots":[["...","...","..."],["...","...","..."]]}`, 2500, FAST_MODEL);
     const qs = (j.slots || []).map((g) => (Array.isArray(g) ? g : [g]).filter((q) => typeof q === 'string' && q.trim()).slice(0, 3)).filter((g) => g.length >= 2).slice(0, DUEL_N);
     if (qs.length < 3) throw new Error('No pude armar las preguntas. Probá de nuevo.');
-    const id = await sbRpc('create_duel2', { p_player: settings.playerId, p_name: settings.name, p_topic: freeT || duelTopicName(topicKey), p_diff: 'basico', p_questions: qs, p_target: target || null });
+    const id = await sbRpc('create_duel3', { p_player: settings.playerId, p_name: settings.name, p_topic: freeT || duelTopicName(topicKey), p_diff: 'basico', p_questions: qs, p_target: targets[0] || null, p_target2: targets[1] || null });
     if (!id) throw new Error('No pude crear el duelo. Probá de nuevo.');
+    if (freeT) store.set('profe-duel-topics', [freeT].concat(store.get('profe-duel-topics', []).filter((t) => t.toLowerCase() !== freeT.toLowerCase())).slice(0, 12));
     if (bet && bet.trim()) await sbRpc('set_duel_bet', { p_id: id, p_player: settings.playerId, p_bet: bet.trim() }).catch(() => {});
-    if (targetObj) toast(`Listo: ${targetObj.name} va a ver el desafío cuando abra Competencia.`);
+    if (targetObjs.length) toast(`Listo: ${targetObjs.map((x) => x.name).join(' y ')} ${targetObjs.length > 1 ? 'van' : 'va'} a ver el desafío cuando abra${targetObjs.length > 1 ? 'n' : ''} Competencia.`);
     go('duel', { id, fresh: true });
   } catch (e) { btn.disabled = false; msg.innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
@@ -1023,9 +1069,9 @@ views.duel = () => {
     const d = view.d;
     if (!d) { app.innerHTML = `<p class="muted">${view.err ? esc(view.err) : 'Cargando duelo…'}</p>`; return; }
     const me = d.results.find((r) => r.me), rs = d.results, top = rs[0];
-    const allDone = rs.length > 1 && rs.every((r) => r.done);
+    const allDone = duelAllDone(d), full = rs.length >= DUEL_MAX && !me;
     const verdict = !me || !me.done ? '' : rs.length < 2 ? 'Esperando que alguien acepte el desafío…'
-      : !allDone ? 'Tu rival todavía está jugando…' : top.me ? '🏆 ¡Ganaste!' : rs.filter((r) => r.points === top.points && r.seconds === top.seconds).length > 1 ? '🤝 ¡Empate!' : `🏆 Ganó ${esc(top.name)}`;
+      : !allDone ? (rs.some((r) => !r.done) ? 'Todavía hay alguien jugando…' : `Falta que juegue ${esc(d.target_name || 'alguien más')}…`) : top.me ? '🏆 ¡Ganaste!' : rs.filter((r) => r.points === top.points && r.seconds === top.seconds).length > 1 ? '🤝 ¡Empate!' : `🏆 Ganó ${esc(top.name)}`;
     app.innerHTML = `
       <div class="card ask-card"><div class="ask-q">⚔️ ${esc(d.topic)}</div>
         <div class="muted small">Desafío de ${esc(d.mine ? 'vos' : d.creator_name)}${d.target_name ? ` para ${esc(d.for_me ? 'vos' : d.target_name)}` : ''} · ${d.questions.length} preguntas · ${DUEL_T} s cada una</div></div>
@@ -1033,10 +1079,11 @@ views.duel = () => {
       ${verdict ? `<div class="duel-verdict">${verdict}</div>` : ''}
       <div class="duel-board">${rs.length ? rs.map((r, i) => `<div class="duel-score ${r.me ? 'me' : ''} ${allDone ? 'final' : ''}"><span class="duel-pos">${i + 1}</span>${allDone ? `<span class="duel-char"><span class="anim-loop ${animOf(duelChar(d, r, rs).sound)}">${duelChar(d, r, rs).emoji}</span></span>` : ''}<b class="grow">${esc(r.me ? 'Vos' : r.name)}${allDone ? `<span class="duel-sos">${esc(duelChar(d, r, rs).sos)} · nota ${fmt(r.avg || 0)}</span><span class="duel-joke">${esc(duelChar(d, r, rs).joke)}</span>` : ''}</b>
         <span class="muted small">${r.done ? secs(r.seconds) : `jugando ${r.cum.length}/${d.questions.length}`}</span><span class="duel-pts">${r.points}</span></div>`).join('') : '<p class="muted">Nadie jugó todavía.</p>'}</div>
-      ${d.declined ? `<div class="card duel-declined" style="text-align:center">🙅 ${esc(d.for_me ? 'Rechazaste' : (d.target_name || 'Tu rival') + ' rechazó')} este desafío.</div>` : ''}
-      ${!me || !me.done ? `<button class="block" id="playDuel" style="margin-top:12px">${me ? 'Seguir jugando' : '¡Jugar ahora!'} →</button>` : ''}
-      ${d.for_me && !me && !d.declined ? '<button class="block ghost-red" id="declineDuel" style="margin-top:8px">🙅 Rechazar el reto</button>' : ''}
-      <button class="block ${me && me.done ? '' : 'soft'}" id="shareDuel" style="margin-top:8px">📤 Desafiar a alguien con este duelo</button>
+      ${d.declined ? `<div class="card duel-declined" style="text-align:center">🙅 ${esc(d.for_me ? 'Rechazaste' : (d.declined_names || 'Tu rival') + ' rechazó')} este desafío.</div>` : ''}
+      ${full ? `<div class="card" style="text-align:center">Este duelo ya tiene ${DUEL_MAX} jugadores. ¡Creá uno nuevo!</div>` : ''}
+      ${(!me || !me.done) && !full ? `<button class="block" id="playDuel" style="margin-top:12px">${me ? 'Seguir jugando' : '¡Jugar ahora!'} →</button>` : ''}
+      ${d.for_me && !me && !d.declined && !full ? '<button class="block ghost-red" id="declineDuel" style="margin-top:8px">🙅 Rechazar el reto</button>' : ''}
+      ${rs.length < DUEL_MAX ? `<button class="block ${me && me.done ? '' : 'soft'}" id="shareDuel" style="margin-top:8px">📤 Desafiar a alguien con este duelo</button>` : ''}
       <button class="block soft" id="duelChat" style="margin-top:8px">💬 Chat del duelo</button>
       <button class="block soft" id="toComp" style="margin-top:8px">⚔️ Volver a Competencia</button>`;
     document.getElementById('duelChat').onclick = () => go('chat', { room: d.id, title: d.topic });
@@ -1044,7 +1091,7 @@ views.duel = () => {
     const vEl = app.querySelector('.duel-verdict'); if (vEl && allDone && bigGap(rs)) vEl.insertAdjacentHTML('beforeend', '<div class="small" style="font-weight:700">¡Qué paliza! 😱</div>');
     const pd = document.getElementById('playDuel');
     if (pd) pd.onclick = () => { if (me) toast('Ya habías empezado este duelo: cada uno juega una sola vez, así que queda con lo que tenías.'); startDuelPlay(d, me); };
-    document.getElementById('shareDuel').onclick = () => shareDuel(d);
+    const sh = document.getElementById('shareDuel'); if (sh) sh.onclick = () => shareDuel(d);
     const dd = document.getElementById('declineDuel');
     if (dd) dd.onclick = async () => {
       if (!confirm(`¿Rechazar el reto de ${d.creator_name}?`)) return;
@@ -1061,21 +1108,34 @@ views.duel = () => {
   draw();
   if (!view.d) load();
   stopDuelPoll();
-  duelPoll = setInterval(() => { if (view.name !== 'duel') return stopDuelPoll(); if (view.d && view.d.results.length > 1 && view.d.results.every((r) => r.done)) return; load(); }, 3000);
+  duelPoll = setInterval(() => { if (view.name !== 'duel') return stopDuelPoll(); if (view.d && duelAllDone(view.d)) return; load(); }, 3000);
 };
 // Chistes del final del duelo: al que perdió (cargadas en buena onda, aptas para chicos) y al que ganó. Rotan sin repetirse.
 const LOSER_JOKES = [
   'perdiste por tanto que el marcador pidió ayuda psicológica.', 'te ganaron tan fácil que el otro bostezó en la mitad.',
   'tus respuestas llegaron tarde, como el colectivo un domingo.', 'fuiste a la guerra con una cuchara de plástico.',
-  'el ganador corrió en Fórmula 1 y vos en monopatín sin ruedas.', 'quedaste tan atrás que el último te saludaba de lejos.',
+  'el ganador corrió en Fórmula 1 y vos en monopatín sin ruedas.', 'quedaste tan atrás que el anteúltimo te saludaba de lejos.',
   'hasta la calculadora se tapó los ojos.', 'tranqui: perder también es un arte… y vos sos un artista.',
   'si esto fuera fútbol, te metieron goles hasta en el vestuario.', 'el profe anotó tu puntaje en lápiz, por si mejora solo.',
-  'tus neuronas pidieron vacaciones sin avisar.', 'llegaste segundo… de dos.', 'la tortuga te pasó, saludó y siguió de largo.',
+  'tus neuronas pidieron vacaciones sin avisar.', 'llegaste último, y eso que éramos poquitos.', 'la tortuga te pasó, saludó y siguió de largo.',
   'jugaste con el cerebro en modo avión.', 'el mate se enfrió esperando una respuesta tuya.',
+  'te esforzaste muchísimo… en perder.', 'tu puntaje es tan chiquito que hay que buscarlo con lupa.',
+  'el ganador ya está festejando y vos todavía estás leyendo la primera pregunta.', 'tus respuestas fueron como el wifi del colectivo: no conectaron nunca.',
+  'hasta el reloj de veinte segundos sintió vergüenza ajena.', 'el semáforo te dio verde y vos te quedaste mirando.',
+  'jugaste como una heladera: fresquito, pero quieto.', 'la próxima traé el cerebro, que hoy vino solamente la mochila.',
+  'te ganaron con una mano atrás y tomando la leche.', 'tu personaje pidió que lo cambien de jugador.',
+  'si sumabas un poquito más, llegabas a regular.', 'perder es de humanos. Perder así, es de campeones del perder.',
+  'en el diccionario, al lado de "último", ahora está tu foto.', 'el que perdió… sí, otra vez vos. Por si no te quedó claro.',
 ];
-const WINNER_JOKES = [
-  'ganaste tan fácil que te sobró tiempo para tomar un mate.', 'el podio te queda chico.', 'contestaste más rápido que la luz… y la luz se quejó.',
-  'tu cerebro hoy vino con turbo.', 'pedí la copa, que ya la ganaste.', 'hasta el profe te pidió un autógrafo.', 'jugaste en modo leyenda.',
+// ironía para el último: se dice siempre, una distinta cada vez
+const IRONY = [
+  '¡Pero qué maravilla, eh! ¡Qué nivel!', 'Aplausos… para los otros.', 'Un genio. Un genio incomprendido. Muy incomprendido.',
+  'Impresionante. Impresionantemente bajito.', '¡Bravo, bravísimo! Ah, no, perdón: perdiste.', 'Llamen a la NASA: encontramos un puntaje más bajo que el suelo.',
+  'Tranquilo, que lo importante es competir. Bueno, y ganar. Eso no.', 'Otro día glorioso para la colección de derrotas.',
+];
+const MIDDLE_JOKES = [
+  'ni fu ni fa: en el medio, como el jamón del sándwich.', 'medalla de plata: brilla, pero menos.', 'te salvaste del último por un pelito.',
+  'zafaste. Por poco, pero zafaste.', 'segundo: ni para festejar ni para llorar.',
 ];
 const bigGap = (rs) => rs.length > 1 && rs[0].points - rs[rs.length - 1].points >= 250;
 // Personaje de cada jugador según su nota (0 a 10). Siempre el mismo para ese duelo, así los dos ven lo mismo.
@@ -1087,28 +1147,29 @@ function duelChar(d, r, rs) {
   const key = d.id + '|' + r.name;
   let h = 0; for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   const c = l.chars[h % l.chars.length];
-  return { name: c[0], sos: c[1], emoji: c[2], sound: c[4], joke: c[3][h % c[3].length] };
+  return { name: c[0], sos: c[1], emoji: c[2], sound: charSound(c[4], c[0]), joke: c[3][h % c[3].length] };
 }
 // Al terminar: trompetas y la voz dice quién ganó, con el personaje y chistes de cada uno. Una sola vez por duelo.
 function announceDuel(d, rs) {
-  const said = store.get('profe-duel-said', []);
-  if (said.includes(d.id)) return;
-  store.set('profe-duel-said', said.concat(d.id).slice(-100));
+  const said = store.get('profe-duel-said', []), key = d.id + '|' + rs.length;
+  if (said.includes(key) || (rs.length === 2 && said.includes(d.id))) return;
+  store.set('profe-duel-said', said.concat(key).slice(-100));
   const top = rs[0], tie = rs.length > 1 && rs[1].points === top.points && rs[1].seconds === top.seconds;
   const huge = !tie && bigGap(rs);
   const sos = (r) => duelChar(d, r, rs).sos.replace(/^Sos /, r.me ? 'sos ' : 'es ');
   const voc = (r) => (r.me ? '' : r.name + ', ');
   const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
-  const joke = (r, list) => cap(voc(r) + rotPick(list === LOSER_JOKES ? 'loser' : 'winner', list));
-  const head = tie ? '¡Empate!' : top.me ? '¡Ganaste vos!' : `¡Ganó ${top.name}!`;
+  const pos = rs.length === 3 ? ['Primero', 'Segundo', 'Último'] : ['Primero', 'Último'];
+  const head = tie ? '¡Empate!' : top.me ? 'Ganaste vos.' : `Ganó ${top.name}.`;
   const lines = rs.map((r, i) => {
-    const base = `${r.me ? 'Vos' : r.name}: ${r.points} puntos, y ${sos(r)}.`;
+    const ch = duelChar(d, r, rs), base = `${pos[i] || ''}: ${r.me ? 'vos' : r.name}, ${r.points} puntos, y ${sos(r)}.`;
     if (tie) return base;
-    if (i === 0) return `${base} {{s:${duelChar(d, r, rs).sound}}} ${dramatic(duelChar(d, r, rs).joke)} ${joke(r, WINNER_JOKES)}${huge ? ' {{p}} ' + joke(r, WINNER_JOKES) : ''}`;
-    // al que perdió: trompeta triste y chistes; si la diferencia es enorme, varios seguidos
-    const n = huge ? 3 : 1, js = [];
-    for (let k = 0; k < n; k++) js.push(joke(r, LOSER_JOKES));
-    return `{{s:sadtrombone}} ${base} ${dramatic(duelChar(d, r, rs).joke)} {{p}} ${js.join(' {{p}} ')}${huge ? ' {{p}} ¡Qué paliza!' : ''}`;
+    if (i === 0) return `${base} {{s:${ch.sound}}}`; // el ganador: corto y austero
+    if (i < rs.length - 1) return `${base} ${cap(voc(r) + rotPick('middle', MIDDLE_JOKES))}`;
+    // el último: trompeta triste, su chiste, varias cargadas seguidas e ironía. Si la diferencia es enorme, más todavía.
+    const n = huge ? 5 : 3, js = [];
+    for (let k = 0; k < n; k++) js.push(cap(voc(r) + rotPick('loser', LOSER_JOKES)));
+    return `{{s:sadtrombone}} ${base} ${dramatic(ch.joke)} {{p}} ${js.join(' {{p}} ')} {{p}} ${rotPick('irony', IRONY)}${huge ? ' {{p}} ¡Qué paliza! {{s:sadtrombone}} ¡Pero qué paliza!' : ''}`;
   }).join(' {{p}} ');
   const last = rs[rs.length - 1];
   const betLine = d.bet && !tie ? ` {{p}} Y acordate de la apuesta: ${d.bet}. ${last.me ? 'Te toca cumplir a vos.' : `Le toca cumplir a ${last.name}.`}` : '';
@@ -1130,20 +1191,19 @@ async function startDuelPlay(d, me) {
     view.d = null; return render();
   }
   let variant = 0;
-  try { variant = await sbRpc('duel_join', { p_id: d.id, p_player: settings.playerId, p_name: settings.name }); } catch { return toast('No pude entrar al duelo. Probá de nuevo.'); }
-  go('duelPlay', { id: d.id, d, qs: playerQuestions(d, +variant || 0), idx: 0, ans: [], t0: 0, total: 0, rival: null }, false);
+  try { variant = await sbRpc('duel_join', { p_id: d.id, p_player: settings.playerId, p_name: settings.name }); } catch (e) { return toast(/lleno/i.test(e.message) ? `Este duelo ya tiene ${DUEL_MAX} jugadores.` : 'No pude entrar al duelo. Probá de nuevo.'); }
+  go('duelPlay', { id: d.id, d, qs: playerQuestions(d, +variant || 0), idx: 0, ans: [], t0: 0, total: 0, rivalRows: d.results }, false);
 }
 // Juego: pregunta, cuenta regresiva de 20 que suena, y arriba el marcador tuyo y del rival.
 views.duelPlay = () => {
   const d = view.d, i = view.idx, q = view.qs[i];
   setHeader(`Duelo · ${i + 1} de ${d.questions.length}`);
   const myPts = view.ans.reduce((a, x) => a + (x.pts || 0), 0);
-  view.rival = rivalNow();
   app.innerHTML = `
-    <div class="duel-live">
+    <div class="duel-live ${rivalsNow().length > 1 ? 'three' : ''}">
       <div class="duel-live-box me"><div class="small">Vos</div><b id="myPts">${myPts}</b><div class="duel-dots">${d.questions.map((_, k) => `<i class="${view.ans[k] ? (view.ans[k].pts == null ? 'wait' : view.ans[k].c >= 6 ? 'ok' : 'bad') : ''}"></i>`).join('')}</div></div>
       <div class="duel-vs">VS</div>
-      <div class="duel-live-box"><div class="small" id="rivName">${view.rival ? esc(view.rival.name) : 'Rival'}</div><b id="rivPts">${view.rival ? view.rival.shown : '–'}</b><div class="small muted" id="rivNote">${view.rival ? view.rival.note : 'todavía no jugó'}</div></div>
+      <div id="rivals" class="duel-rivals">${rivalsHtml()}</div>
     </div>
     <div class="card duel-q"><div style="font-size:20px;font-weight:700">${esc(q)}</div></div>
     <textarea id="dans" rows="2" placeholder="Escribí o dictá tu respuesta"></textarea>
@@ -1195,18 +1255,20 @@ function saveDuelProgress(d, done) {
   return sbRpc('duel_progress', { p_id: d.id, p_player: settings.playerId, p_name: settings.name, p_points: s.points, p_avg: s.avg, p_seconds: st.total, p_answers: s.list, p_done: !!done }).catch(() => {});
 }
 // El rival "va saliendo" al mismo ritmo que vos: si ya terminó, ves sus puntos hasta tu misma pregunta; si está jugando, sus puntos de ahora.
-function rivalNow() {
-  const others = (view.rivalRows || []).filter((r) => !r.me); if (!others.length) return null;
+function rivalsNow() {
+  const others = (view.rivalRows || []).filter((r) => !r.me).slice(0, DUEL_MAX - 1);
   const n = view.d.questions.length, mine = view.ans.filter((x) => x && x.pts != null).length;
   const shownOf = (r) => (r.done ? (mine ? r.cum[Math.min(mine, r.cum.length) - 1] || 0 : 0) : r.points);
-  const best = others.map((r) => ({ r, s: shownOf(r) })).sort((a, b) => b.s - a.s)[0];
-  return { name: best.r.name, shown: best.s, note: best.r.done ? `en la pregunta ${Math.min(mine, best.r.cum.length)} de ${n}` : `respondió ${best.r.cum.length} de ${n}` };
+  return others.map((r) => ({ name: r.name, shown: shownOf(r), note: r.done ? `en la pregunta ${Math.min(mine, r.cum.length)} de ${n}` : `respondió ${r.cum.length} de ${n}` }));
 }
+const rivalsHtml = () => { const l = rivalsNow(); return l.length ? l.map((r, k) => `<div class="duel-live-box"><div class="small">${esc(r.name)}</div><b data-rp="${k}">${r.shown}</b><div class="small muted">${esc(r.note)}</div></div>`).join('')
+  : '<div class="duel-live-box"><div class="small">Rival</div><b>–</b><div class="small muted">todavía no jugó</div></div>'; };
 function paintRival() {
-  view.rival = rivalNow(); if (!view.rival) return;
-  const a = document.getElementById('rivPts'), nm = document.getElementById('rivName'), o = document.getElementById('rivNote'); if (!a) return;
-  if (a.textContent !== String(view.rival.shown)) { a.textContent = view.rival.shown; a.classList.remove('beat'); void a.offsetWidth; a.classList.add('beat'); }
-  nm.textContent = view.rival.name; o.textContent = view.rival.note;
+  const box = document.getElementById('rivals'); if (!box) return;
+  const before = [...box.querySelectorAll('[data-rp]')].map((b) => b.textContent);
+  box.innerHTML = rivalsHtml();
+  const lv = box.closest('.duel-live'); if (lv) lv.classList.toggle('three', box.children.length > 1);
+  box.querySelectorAll('[data-rp]').forEach((b, k) => { if (before[k] !== undefined && before[k] !== b.textContent) b.classList.add('beat'); });
 }
 function pollRival() {
   stopDuelPoll();
@@ -1366,67 +1428,85 @@ views.exam = () => {
 const LEVELS = [
   { min: 0, chars: [
     ['Musgo', 'Sos un Musgo', '🌿', ['Diez años pegado a la misma piedra y aprendiste que la piedra es dura. ¡Algo es algo!', 'El musgo tarda, pero cubre la piedra entera. Vos también, despacito.'], 'bubble'],
-    ['Ameba dormida', 'Sos una Ameba dormida', '🫧', ['Te dividiste en dos para estudiar y se durmieron las dos mitades.', 'La ameba no tiene cerebro y sobrevive igual. Vos tenés uno, ¡prendelo!'], 'bubble'],
+    ['Ameba dormida', 'Sos una Ameba dormida', '🫧', ['Te dividiste en dos para estudiar y se durmieron las dos mitades.', 'La ameba no tiene cerebro y sobrevive igual. Vos tenés uno, ¡prendelo!'], 'plop'],
     ['Piedra con ojos', 'Sos una Piedra con ojos', '🪨', ['Viste la pregunta, viste la respuesta… y no te moviste ni un milímetro.', 'La piedra tardó tres siglos en contestar. Vos menos, ya es un avance.'], 'thud'],
-    ['Bacteria de heladera', 'Sos una Bacteria de heladera', '🦠', ['Vivís al lado del dulce de leche y ni así se te endulzó el tema.', 'Prendieron la luz, te preguntaron la lección y te escondiste atrás del tomate.'], 'buzz'],
-    ['Hongo de zapatilla', 'Sos un Hongo de zapatilla', '🍄', ['Toda la semana a oscuras oliendo a pata. Hoy por lo menos te dio el sol.', 'Viajás gratis a todos los partidos, pero nunca mirás la pelota.'], 'squish'],
+    ['Bacteria de heladera', 'Sos una Bacteria de heladera', '🦠', ['Vivís al lado del dulce de leche y ni así se te endulzó el tema.', 'Prendieron la luz, te preguntaron la lección y te escondiste atrás del tomate.'], 'fly'],
+    ['Hongo de zapatilla', 'Sos un Hongo de zapatilla', '🍄', ['Toda la semana a oscuras oliendo a pata. Hoy por lo menos te dio el sol.', 'Viajás gratis a todos los partidos, pero nunca mirás la pelota.'], 'sniff'],
     ['Chicle pegado en el banco', 'Sos un Chicle pegado en el banco', '🫥', ['Veinte años escuchando clases abajo del banco, y nada. Estabas muy ocupado estando pegado.', 'Tu gran virtud es que no te soltás nunca. Pegate al tema, entonces.'], 'pop'],
     ['Pelusa de ombligo', 'Sos una Pelusa de ombligo', '🌀', ['Pasaste el día en un ombligo: todo azul y redondito. Panorama limitado.', 'Nadie sabe de dónde sale la pelusa. Ni esta respuesta tuya.'], 'pop'],
-    ['Moho de pan viejo', 'Sos un Moho de pan viejo', '🍞', ['Lunes, un puntito. Viernes, dueño del pan entero. Vos estás en el lunes.', 'Del moho salió la penicilina. Del fondo puede salir algo genial.'], 'bubble'],
+    ['Moho de pan viejo', 'Sos un Moho de pan viejo', '🍞', ['Lunes, un puntito. Viernes, dueño del pan entero. Vos estás en el lunes.', 'Del moho salió la penicilina. Del fondo puede salir algo genial.'], 'bubbling'],
     ['Liquen de baldosa', 'Sos un Liquen de baldosa', '🟩', ['Te pisan todos los días y ni te enterás. Igual que este tema.', 'Tardás cien años en crecer un centímetro. Vamos a necesitar paciencia.'], 'bubble'],
     ['Papa olvidada en la alacena', 'Sos una Papa olvidada en la alacena', '🥔', ['Te salieron brotes, pero ninguna respuesta.', 'Estás quietita en la oscuridad. Salí a la luz, que hay que estudiar.'], 'thud'],
-    ['Media sin par', 'Sos una Media sin par', '🧦', ['Perdiste a tu compañera y también la respuesta. Qué día.', 'Nadie sabe adónde se van las medias. Ni las respuestas.'], 'pop'],
+    ['Media sin par', 'Sos una Media sin par', '🧦', ['Perdiste a tu compañera y también la respuesta. Qué día.', 'Nadie sabe adónde se van las medias. Ni las respuestas.'], 'paper'],
     ['Grano de arena perdido', 'Sos un Grano de arena perdido', '⏳', ['Uno entre millones, y justo vos no sabías.', 'Todas las playas empiezan con un grano. Vos ya estás.'], 'swoosh'],
-    ['Tapita de gaseosa perdida', 'Sos una Tapita de gaseosa perdida', '🔘', ['Rodaste abajo de la heladera y ahí quedaste.', 'Sin botella y sin respuesta.'], 'pop'],
+    ['Tapita de gaseosa perdida', 'Sos una Tapita de gaseosa perdida', '🔘', ['Rodaste abajo de la heladera y ahí quedaste.', 'Sin botella y sin respuesta.'], 'springr~1.3'],
     ['Pelusa de bolsillo', 'Sos una Pelusa de bolsillo', '☁️', ['Nadie sabe de dónde saliste. Tus respuestas tampoco.', 'Suavecita, pero vacía.'], 'pop'],
     ['Babosa de jardín', 'Sos una Babosa de jardín', '🐌', ['Dejaste un caminito brillante… de respuestas mal.', 'Lenta pero constante. Bueno, lenta.'], 'squish'],
-    ['Hongo de heladera', 'Sos un Hongo de heladera', '🍄', ['Creciste en el fondo, al lado del tema que no abriste.', 'Hasta el queso viejo sabe más.'], 'bubble'],
+    ['Hongo de heladera', 'Sos un Hongo de heladera', '🍄', ['Creciste en el fondo, al lado del tema que no abriste.', 'Hasta el queso viejo sabe más.'], 'dooropen'],
+    ['Fideo pegado en el techo', 'Sos un Fideo pegado en el techo', '🍝', ['Te tiraron para ver si estabas listo y quedaste colgado. Como tus respuestas.', 'Desde arriba se ve todo, y aun así no viste la respuesta.'], 'plop~0.8'],
+    ['Inodoro tapado', 'Sos un Inodoro tapado', '🚽', ['Todo entra y nada sale. Igualito que la lección de hoy.', 'Tiraste la cadena y se fue la respuesta también.'], 'toilet'],
+    ['Control remoto sin pilas', 'Sos un Control remoto sin pilas', '📺', ['Apretaron todos tus botones y no cambiaste nada.', 'Te buscaron tres días abajo del sillón y al final no andabas.'], 'weird~0.8'],
+    ['Celular con uno por ciento', 'Sos un Celular con uno por ciento', '🪫', ['Te quedaba energía para una respuesta y la usaste mal.', 'Vibrás, pero no prendés.'], 'phone'],
+    ['Tostada quemada', 'Sos una Tostada quemada', '🍞', ['Cinco minutos de más y saliste carbón.', 'Raspándote un poquito, capaz que algo se salva.'], 'cough'],
+    ['Pava que no hierve', 'Sos una Pava que no hierve', '🫖', ['Media hora en el fuego y ni tibia.', 'Para el mate falta. Y para el diez, más todavía.'], 'kettle~0.8']
   ], jokes: ['Del fondo solo se puede subir. Tenés el ascensor para vos solo.', 'Los dinosaurios también empezaron siendo un bichito. Vos repasás hoy.', 'Hoy fue un día de esos. Mañana, con un repaso, es otro.', 'Como cuando la abuela pregunta si comiste y decís que sí pero no. Así fue este examen.', '¡Qué nivel! ¡Qué capacidad! ¡Qué… bueno, no me sale seguir.'] },
   { min: 2, chars: [
     ['Plancton', 'Sos un Plancton', '🦐', ['Vino la ballena a tomarte lección y te hiciste el desmayado.', 'Chiquitito, pero ya largás burbujitas de conocimiento.'], 'bubble'],
-    ['Mosquito despistado', 'Sos un Mosquito despistado', '🦟', ['Toda la noche zumbando cerca de la respuesta y nunca picaste.', 'Al mosquito lo echaron por hacer ruido sin contestar. Vos al menos contestaste.'], 'buzz'],
+    ['Mosquito despistado', 'Sos un Mosquito despistado', '🦟', ['Toda la noche zumbando cerca de la respuesta y nunca picaste.', 'Al mosquito lo echaron por hacer ruido sin contestar. Vos al menos contestaste.'], 'fly~1.2'],
     ['Lombriz mareada', 'Sos una Lombriz mareada', '🪱', ['Cavaste toda la tarde y saliste en el patio del vecino.', 'La lombriz no tiene ojos y encuentra el camino. Vos tenés dos.'], 'squish'],
     ['Medusa sin GPS', 'Sos una Medusa sin GPS', '🪼', ['Saliste para el arrecife y terminaste en Mar del Plata. "Me dejé llevar", dijiste.', 'Sin cerebro pero con onda. Prendé el GPS mental.'], 'bloop'],
-    ['Pulga sin perro', 'Sos una Pulga sin perro', '🐾', ['Saltaste tan alto que te pasaste del perro. Saltar sabés, falta apuntar.', 'Si saltaras cien veces tu nota como la pulga, ya serías Nivel Dios.'], 'boing'],
-    ['Mosca de verano', 'Sos una Mosca de verano', '🪰', ['Veinte choques contra el vidrio hasta ver la puerta abierta. Ya casi.', 'Lástima que no ves las preguntas en cámara lenta como las moscas.'], 'buzz'],
+    ['Pulga sin perro', 'Sos una Pulga sin perro', '🐾', ['Saltaste tan alto que te pasaste del perro. Saltar sabés, falta apuntar.', 'Si saltaras cien veces tu nota como la pulga, ya serías Nivel Dios.'], 'springr'],
+    ['Mosca de verano', 'Sos una Mosca de verano', '🪰', ['Veinte choques contra el vidrio hasta ver la puerta abierta. Ya casi.', 'Lástima que no ves las preguntas en cámara lenta como las moscas.'], 'fly'],
     ['Garrapata con sueño', 'Sos una Garrapata con sueño', '🕷️', ['Te subiste al perro para ir al colegio y te despertaste en la veterinaria.', 'Agarrate al tema como garrapata y no lo largues.'], 'scuttle'],
     ['Polilla del ropero', 'Sos una Polilla del ropero', '🦋', ['Te preguntaron de moda y contestaste que la lana es rica.', 'Siempre vas hacia la luz. Hoy la luz es el repaso.'], 'flutter'],
     ['Hormiga sin fila', 'Sos una Hormiga sin fila', '🐜', ['Todas fueron para un lado y vos para el otro.', 'Te perdiste la fila, pero no la voluntad.'], 'scuttle'],
     ['Cangrejo al revés', 'Sos un Cangrejo al revés', '🦀', ['Caminás de costado y encima para atrás.', 'Pinzas tenés. Falta agarrar la respuesta.'], 'scuttle'],
-    ['Pez dorado distraído', 'Sos un Pez dorado distraído', '🐠', ['Tres segundos de memoria. Y se nota.', 'Diste veinte vueltas a la pecera y cada vuelta era nueva.'], 'bloop'],
+    ['Pez dorado distraído', 'Sos un Pez dorado distraído', '🐠', ['Tres segundos de memoria. Y se nota.', 'Diste veinte vueltas a la pecera y cada vuelta era nueva.'], 'splash'],
     ['Rana sin salto', 'Sos una Rana sin salto', '🐸', ['Te preparaste para saltar y te quedaste sentada.', 'Croás bien, falta el salto.'], 'croak'],
     ['Lombriz confundida', 'Sos una Lombriz confundida', '🪱', ['No sabés cuál es tu cabeza. Y se nota.', 'Cavaste para abajo y la respuesta estaba arriba.'], 'squish'],
-    ['Mosquito sin rumbo', 'Sos un Mosquito sin rumbo', '🦟', ['Zumbaste toda la noche y no picaste ni una.', 'Mucho ruido y pocas respuestas.'], 'buzz'],
+    ['Mosquito sin rumbo', 'Sos un Mosquito sin rumbo', '🦟', ['Zumbaste toda la noche y no picaste ni una.', 'Mucho ruido y pocas respuestas.'], 'fly~1.35'],
     ['Cucaracha optimista', 'Sos una Cucaracha optimista', '🪳', ['Sobrevivís a todo, hasta a este examen.', 'Te pisaron la nota, pero seguís caminando.'], 'scuttle'],
     ['Polilla del placard', 'Sos una Polilla del placard', '🦋', ['Te comiste el suéter, pero no el libro.', 'Vas a la luz… y la luz era la heladera.'], 'flutter'],
+    ['Fantasma sin sábana', 'Sos un Fantasma sin sábana', '👻', ['Querías asustar y nadie te vio. Igual que tus respuestas.', 'Atravesás paredes, pero el examen no.'], 'ghost'],
+    ['Globo desinflado', 'Sos un Globo desinflado', '🎈', ['Arrancaste lleno de aire y terminaste en el piso.', 'Un soplido más y capaz que llegás.'], 'weird~1.3'],
+    ['Mosquito con hipo', 'Sos un Mosquito con hipo', '🦟', ['Ibas a picar la respuesta y te agarró el hipo.', 'Zumbás mucho, picás poco.'], 'fly~0.9'],
+    ['Bombilla tapada', 'Sos una Bombilla tapada', '🧉', ['Chupás y chupás, y no sale nada.', 'Te falta destapar las ideas.'], 'sip'],
+    ['Sapo resfriado', 'Sos un Sapo resfriado', '🐸', ['Croac, cof, croac. Ni cantar pudiste.', 'Abrigate y estudiá, en ese orden.'], 'cough~0.8'],
+    ['Despertador dormido', 'Sos un Despertador dormido', '⏰', ['Tenías que despertar a todos y te quedaste dormido vos.', 'Llegaste tarde a tu propia alarma.'], 'yawn~1.2']
   ], jokes: ['Subiste un escalón de la evolución. Falta la escalera entera.', 'Los gigantes también fueron chiquitos alguna vez.', 'Algo quedó en la cabeza. Ahora lo regamos.', 'Le ganaste a una piedra. Por poquito. La piedra pidió revancha.', 'Estuviste tan cerca de la respuesta como yo de ganar el Quini.'] },
   { min: 3, chars: [
     ['Larvoide', 'Sos un Larvoide', '🐛', ['"Algún día voy a ser mariposa", dijiste. El espejo contestó: "Primero estudiá".', 'Comé tema todo el día como larva y te salen las alas.'], 'squish'],
-    ['Renacuajo', 'Sos un Renacuajo', '🐸', ['Todavía con cola, pero ya te asoman las patitas.', 'Nadás en círculos en el charco y pensás que es el océano.'], 'croak'],
+    ['Renacuajo', 'Sos un Renacuajo', '🐸', ['Todavía con cola, pero ya te asoman las patitas.', 'Nadás en círculos en el charco y pensás que es el océano.'], 'splash~1.3'],
     ['Caracol sin casa', 'Sos un Caracol sin casa', '🐌', ['Saliste a las ocho, llegaste a las cinco y sin la casa. Pero llegaste.', '"Disfruto el camino", dice el caracol. Disfrutalo, pero apurá un poco.'], 'squish'],
     ['Gusano de seda dormilón', 'Sos un Gusano de seda dormilón', '🐛', ['Empezaste el capullo, te pusiste cómodo y te dormiste adentro.', 'Con tu seda se hacen vestidos de rey. Ya hilaste un poquito.'], 'squish'],
     ['Babosa brillante', 'Sos una Babosa brillante', '🐌', ['Cruzaste el jardín para ir a clase y llegaste al acto de fin de año.', 'Vas dejando un caminito brillante. Poquito, pero brilla.'], 'squish'],
-    ['Grillo desafinado', 'Sos un Grillo desafinado', '🦗', ['Cantaste la lección toda la noche y te tiraron una zapatilla. Era la respuesta equivocada.', 'Frotá un poco más las neuronas y te sale la melodía.'], 'cricket'],
-    ['Cascarudo panza arriba', 'Sos un Cascarudo panza arriba', '🪲', ['Panza arriba, moviendo las patitas: "Qué lindo se ve el cielo". Dale, date vuelta.', 'Todo cascarudo termina dándose vuelta. Vos también.'], 'thud'],
+    ['Grillo desafinado', 'Sos un Grillo desafinado', '🦗', ['Cantaste la lección toda la noche y te tiraron una zapatilla. Era la respuesta equivocada.', 'Frotá un poco más las neuronas y te sale la melodía.'], 'cricketr~0.85'],
+    ['Cascarudo panza arriba', 'Sos un Cascarudo panza arriba', '🪲', ['Panza arriba, moviendo las patitas: "Qué lindo se ve el cielo". Dale, date vuelta.', 'Todo cascarudo termina dándose vuelta. Vos también.'], 'djembe'],
     ['Ciempiés con calambre', 'Sos un Ciempiés con calambre', '🐛', ['Se te acalambraron las cien patas y llegaste saltando en una. ¡Pero llegaste!', 'Te pusiste a pensar cómo caminar y te caíste. Menos pensar, más repasar.'], 'scuttle'],
     ['Erizo despeinado', 'Sos un Erizo despeinado', '🦔', ['Mucha púa y poca respuesta.', 'Te hiciste bolita con la pregunta. Desenrollate.'], 'squish'],
-    ['Zorrino tímido', 'Sos un Zorrino tímido', '🦨', ['Ni el olor te salió bien hoy.', 'Tranqui, que nadie se acerca a burlarse.'], 'squish'],
+    ['Zorrino tímido', 'Sos un Zorrino tímido', '🦨', ['Ni el olor te salió bien hoy.', 'Tranqui, que nadie se acerca a burlarse.'], 'sniff~0.85'],
     ['Gallina pensativa', 'Sos una Gallina pensativa', '🐔', ['Pusiste un huevo de respuesta. Medio crudo.', 'Picoteaste por todos lados y algo encontraste.'], 'chirp'],
     ['Topo con anteojos', 'Sos un Topo con anteojos', '🐀', ['Cavaste bien, pero salió en cualquier lado.', 'Los anteojos ayudan. Falta abrir los ojos.'], 'thud'],
-    ['Tortuga dormida', 'Sos una Tortuga dormida', '🐢', ['Te metiste en el caparazón justo en la pregunta difícil.', 'Despacito se llega. Despertate primero.'], 'thud'],
+    ['Tortuga dormida', 'Sos una Tortuga dormida', '🐢', ['Te metiste en el caparazón justo en la pregunta difícil.', 'Despacito se llega. Despertate primero.'], 'yawn~0.8'],
     ['Ardilla olvidadiza', 'Sos una Ardilla olvidadiza', '🐿️', ['Enterraste las respuestas y no te acordás dónde.', 'Juntaste nueces, falta juntar ideas.'], 'squeak'],
     ['Pingüino resbaloso', 'Sos un Pingüino resbaloso', '🐧', ['Ibas bien y te patinaste en el hielo.', 'Elegante de traje, flojito de respuestas.'], 'honk'],
-    ['Perezoso en pausa', 'Sos un Perezoso en pausa', '🦥', ['Contestaste… mañana, ¿no?', 'Colgado del árbol y del tema.'], 'purr'],
+    ['Perezoso en pausa', 'Sos un Perezoso en pausa', '🦥', ['Contestaste… mañana, ¿no?', 'Colgado del árbol y del tema.'], 'yawn'],
+    ['Bicicleta sin cadena', 'Sos una Bicicleta sin cadena', '🚲', ['Pedaleás con todo y no avanzás un metro.', 'Ponele la cadena al estudio y arrancás.'], 'springr~0.9'],
+    ['Dinosaurio de plástico', 'Sos un Dinosaurio de plástico', '🦖', ['Rugís fuerte, pero sos de juguete.', 'Tus primos dominaron el mundo. Vos dominás la repisa.'], 'dino1~1.3'],
+    ['Pochoclo sin explotar', 'Sos un Pochoclo sin explotar', '🍿', ['Todos saltaron y vos quedaste en el fondo de la olla.', 'Un poquito más de calor y explotás de sabiduría.'], 'plop~1.2'],
+    ['Vaso de agua tibia', 'Sos un Vaso de agua tibia', '🥛', ['Ni frío ni caliente, como tus respuestas.', 'Refrescás poquito, pero algo es algo.'], 'gulp'],
+    ['Cuervo con dudas', 'Sos un Cuervo con dudas', '🐦‍⬛', ['Graznaste la respuesta, pero en otro idioma.', 'Dicen que los cuervos son inteligentes. Hoy no se notó.'], 'raven'],
+    ['Hormiga perdida en el azúcar', 'Sos una Hormiga perdida en el azúcar', '🐜', ['Encontraste el azúcar y te olvidaste del hormiguero.', 'Mucho dulce y poco camino.'], 'scuttle~1.3']
   ], jokes: ['Todavía no sos mariposa, pero el capullo está en obra.', 'Ya tenés los bordes del rompecabezas. Falta el medio.', 'La tortuga le ganó a la liebre, acordate.', 'Contestaste con una seguridad bárbara. Lástima que era otra cosa.', 'Me gustó el esfuerzo. Lo demás, lo repasamos.'] },
   { min: 4, chars: [
     ['Araña de rincón', 'Sos una Araña de rincón', '🕷️', ['Tejiste la telaraña y cayó una mosca, un papelito y polvo. La respuesta no.', 'Salí del rincón, que el tema no muerde.'], 'scuttle'],
     ['Cucaracha valiente', 'Sos una Cucaracha valiente', '🪳', ['Prendieron la luz y fuiste la única que se quedó a terminar el examen.', 'Sobrevivís a todo. Ahora vamos por algo más que sobrevivir.'], 'scuttle'],
     ['Hormiga perdida', 'Sos una Hormiga perdida', '🐜', ['Cargaste la miga todo el día… al hormiguero equivocado.', 'Cargás cincuenta veces tu peso. Este tema es pan comido.'], 'scuttle'],
-    ['Bicho bolita', 'Sos un Bicho bolita', '🐞', ['Llegó la pregunta difícil y te hiciste bolita. Desenrollate.', 'Rodaste cerquita de la respuesta. Un empujoncito más.'], 'thud'],
-    ['Rata de biblioteca', 'Sos una Rata de biblioteca', '🐀', ['Leíste la tapa de todos los libros. Adentro está lo bueno, eh.', 'Rata ya sos. Te falta la biblioteca.'], 'squeak'],
+    ['Bicho bolita', 'Sos un Bicho bolita', '🐞', ['Llegó la pregunta difícil y te hiciste bolita. Desenrollate.', 'Rodaste cerquita de la respuesta. Un empujoncito más.'], 'djembe~1.3'],
+    ['Rata de biblioteca', 'Sos una Rata de biblioteca', '🐀', ['Leíste la tapa de todos los libros. Adentro está lo bueno, eh.', 'Rata ya sos. Te falta la biblioteca.'], 'paper~1.2'],
     ['Paloma de plaza', 'Sos una Paloma de plaza', '🐦', ['Escuchaste toda la clase y solo te acordás de dónde había migas.', 'Las palomas siempre vuelven. Vos volvé al tema.'], 'coo'],
     ['Sapo de charco', 'Sos un Sapo de charco', '🐸', ['Creías saber todo del mar hasta que llovió y el charco creció.', 'Saltaste por la mosca y agarraste una hoja. Afiná la puntería.'], 'croak'],
-    ['Lagartija apurada', 'Sos una Lagartija apurada', '🦎', ['Contestaste tan rápido que se te cayó la cola. La cola contestaba mejor.', 'Tomá un poco de sol y volvé con todo.'], 'swoosh'],
+    ['Lagartija apurada', 'Sos una Lagartija apurada', '🦎', ['Contestaste tan rápido que se te cayó la cola. La cola contestaba mejor.', 'Tomá un poco de sol y volvé con todo.'], 'swoosh~1.25'],
     ['Comadreja curiosa', 'Sos una Comadreja curiosa', '🦡', ['Metés la nariz en todo, falta meterla en el libro.', 'Curiosidad tenés de sobra. Ya casi.'], 'squeak'],
     ['Ganso enojado', 'Sos un Ganso enojado', '🪿', ['Le gritaste al examen. No funcionó.', 'Mucha actitud. Ahora sumale respuestas.'], 'honk'],
     ['Gorrión de vereda', 'Sos un Gorrión de vereda', '🐦', ['Juntaste miguitas de respuestas. Algo comiste.', 'Chiquito y rápido. Falta un poquito de vuelo.'], 'chirp'],
@@ -1435,6 +1515,12 @@ const LEVELS = [
     ['Pato distraído', 'Sos un Pato distraído', '🦆', ['Nadaste en círculos alrededor de la respuesta.', 'Cuac. Eso dijiste. Casi.'], 'quack'],
     ['Murciélago al revés', 'Sos un Murciélago al revés', '🦇', ['Ves todo patas para arriba. El examen también.', 'Volás de noche. Estudiá de día.'], 'squeak'],
     ['Burrito testarudo', 'Sos un Burrito testarudo', '🫏', ['Te plantaste en la respuesta equivocada.', 'Terco sos. Ahora sé terco con el estudio.'], 'heehaw'],
+    ['Hormiga con mochila', 'Sos una Hormiga con mochila', '🐜', ['Cargás diez veces tu peso, pero te olvidaste los apuntes.', 'Fila india hasta el aprobado: falta poquito.'], 'scuttle~0.9'],
+    ['Escoba voladora sin piloto', 'Sos una Escoba voladora sin piloto', '🧹', ['Volás, pero sin rumbo.', 'Agarrá el mango y dirigí, que ya casi.'], 'swoosh~0.85'],
+    ['Gallo dormilón', 'Sos un Gallo dormilón', '🐓', ['Cantaste a las once de la mañana.', 'Ya amaneció, gallo. Despertá.'], 'yawn~1.4'],
+    ['Pirata sin mapa', 'Sos un Pirata sin mapa', '🏴‍☠️', ['Encontraste el barco pero no el tesoro.', 'La equis marca la respuesta: buscala.'], 'shipbell~1.2'],
+    ['Tren de juguete', 'Sos un Tren de juguete', '🚂', ['Das vueltas y vueltas en el mismo círculo.', 'Chucuchú hacia el aprobado, despacito.'], 'callwhistle~1.2'],
+    ['Bombero sin manguera', 'Sos un Bombero sin manguera', '🧑‍🚒', ['Llegaste rapidísimo, pero sin agua.', 'Para apagar la duda falta la manguera del estudio.'], 'bell~1.2']
   ], jokes: ['Casi la mitad: el vaso está medio lleno y el profe trajo la jarra.', 'Estás en la puerta del aprobado. Tocá el timbre con un repaso.', 'Tenés todos los ingredientes. Falta cocinar.', 'Fuiste por medialunas y volviste con las migas. Algo trajiste.', 'El examen se rió un poquito. La próxima te reís último vos.'] },
   { min: 5, chars: [
     ['Cuadrúpedo', 'Sos un Cuadrúpedo', '🐕', ['Viste a un humano en dos patas, dijiste "qué fácil" y te caíste de cola.', 'En cuatro patas se está firme, pero parado se ve más lejos.'], 'bark'],
@@ -1445,14 +1531,20 @@ const LEVELS = [
     ['Pato desorientado', 'Sos un Pato desorientado', '🦆', ['Volaste al sur y llegaste al norte. Pero aprendiste geografía.', 'Nadás, caminás y volás, pero nada del todo bien. Ahora a profundizar.'], 'quack'],
     ['Vaca pensativa', 'Sos una Vaca pensativa', '🐄', ['Toda la tarde pensando y al final dijiste: "Muuu". Se notó el esfuerzo.', 'Rumiá el tema dos veces, como la vaca, y te queda grabado.'], 'moo'],
     ['Burro con ganas', 'Sos un Burro con ganas', '🫏', ['"No sé mucho, pero tengo ganas". Con ganas se aprende todo.', 'Dicen que el burro es terco. Con el estudio, eso es virtud.'], 'heehaw'],
-    ['Oveja con dudas', 'Sos una Oveja con dudas', '🐑', ['Seguiste al rebaño… hasta la mitad del camino.', '¿Bee o no bee? Esa es la cuestión.'], 'moo'],
-    ['Chancho filósofo', 'Sos un Chancho filósofo', '🐖', ['Pensaste mucho y contestaste la mitad.', 'Hay barro en las ideas, pero ya se aclaran.'], 'moo'],
+    ['Oveja con dudas', 'Sos una Oveja con dudas', '🐑', ['Seguiste al rebaño… hasta la mitad del camino.', '¿Bee o no bee? Esa es la cuestión.'], 'moo~1.8'],
+    ['Chancho filósofo', 'Sos un Chancho filósofo', '🐖', ['Pensaste mucho y contestaste la mitad.', 'Hay barro en las ideas, pero ya se aclaran.'], 'beast~1.5'],
     ['Llama de la Puna', 'Sos una Llama de la Puna', '🦙', ['Escupiste la respuesta. Casi aciertas.', 'Subiste alto, falta un poquito de aire.'], 'neigh'],
     ['Canguro novato', 'Sos un Canguro novato', '🦘', ['Saltaste bien, pero en la dirección equivocada.', 'Tenés bolsillo: guardá ahí el repaso.'], 'boing'],
-    ['Perro guardián a medias', 'Sos un Perro guardián a medias', '🐕', ['Ladraste la mitad de las respuestas.', 'Moviste la cola. Falta mover la cabeza.'], 'bark'],
+    ['Perro guardián a medias', 'Sos un Perro guardián a medias', '🐕', ['Ladraste la mitad de las respuestas.', 'Moviste la cola. Falta mover la cabeza.'], 'bark~0.85'],
     ['Ternero curioso', 'Sos un Ternero curioso', '🐄', ['Rumiaste la respuesta. Ya casi la tragás.', 'Mitad leche, mitad dudas.'], 'moo'],
     ['Caballo de calesita', 'Sos un Caballo de calesita', '🐴', ['Diste vueltas, pero llegaste a la mitad.', 'Sube y baja, como tu nota.'], 'neigh'],
     ['Mono saltarín', 'Sos un Mono saltarín', '🐒', ['Saltaste de rama en rama y agarraste la mitad.', 'Mucho salto. Ahora, puntería.'], 'monkey'],
+    ['Pelota pinchada', 'Sos una Pelota pinchada', '⚽', ['Picás, pero bajito.', 'Un parche y volvés a la cancha.'], 'weird~0.7'],
+    ['Mate lavado', 'Sos un Mate lavado', '🧉', ['Tenés gusto a algo, pero poquito.', 'Cambiá la yerba y arrancás de nuevo.'], 'sip~0.85'],
+    ['Payaso serio', 'Sos un Payaso serio', '🤡', ['Te reís, pero de nervios.', 'Hiciste reír a medias: faltó el remate.'], 'laugh~0.85'],
+    ['Abuela del WhatsApp', 'Sos una Abuela del WhatsApp', '👵', ['Mandaste la respuesta en un audio de once minutos.', 'Mucho cariño y muchos stickers, poca respuesta.'], 'phone~1.1'],
+    ['Panadero madrugador', 'Sos un Panadero madrugador', '🥖', ['Abriste temprano, pero el pan salió crudito.', 'Ya casi está: falta un ratito de horno.'], 'dooropen~1.1'],
+    ['Presidente de un club de barrio', 'Sos el Presidente de un club de barrio', '🏅', ['Prometiste pileta y cancha nueva. Por ahora hay un aro sin red.', 'Los socios te aplauden… algunos.'], 'clap~0.9']
   ], jokes: ['Llegaste a la parada justo cuando arranca el colectivo. ¡Corré que lo alcanzás!', 'Raspando, pero en camino. Otro intento y sale.', 'Medio examen en el bolsillo. Vamos por la otra mitad.', 'Cinco: el número más tibio del universo. Como el mate que te olvidaste.', 'Así de cerca, como el colectivo que te cierra la puerta en la cara.'] },
   { min: 6, chars: [
     ['Cachalote bípedo', 'Sos un Cachalote bípedo', '🐋', ['Saliste del mar caminando en dos patas y dijiste: "Vine a aprobar". Y aprobaste.', 'El cerebro más grande del planeta, y ahora sabemos para qué: para aprobar.'], 'whale'],
@@ -1460,89 +1552,119 @@ const LEVELS = [
     ['Pingüino emprendedor', 'Sos un Pingüino emprendedor', '🐧', ['Te pusiste el traje y abriste un negocio: vender hielo en la Antártida. Éxito total.', 'No volás, pero nadás como campeón. Hoy brillaste en lo tuyo.'], 'honk'],
     ['Delfín con anteojos', 'Sos un Delfín con anteojos', '🐬', ['Te compraste anteojos y sacaste la mejor nota del océano.', 'Inteligente, simpático y siempre sonriendo. Como ahora.'], 'dolphin'],
     ['Caballo de carrera', 'Sos un Caballo de carrera', '🐎', ['Largaste último, pasaste a todos en la recta y llegaste primero. ¡Qué remontada!', 'Se nota el entrenamiento. ¡Al galope!'], 'neigh'],
-    ['Loro bilingüe', 'Sos un Loro bilingüe', '🦜', ['Ya repetís las respuestas correctas en dos idiomas.', 'Dicen que el loro solo repite. Vos no repetiste: entendiste.'], 'chirp'],
+    ['Loro bilingüe', 'Sos un Loro bilingüe', '🦜', ['Ya repetís las respuestas correctas en dos idiomas.', 'Dicen que el loro solo repite. Vos no repetiste: entendiste.'], 'voice1~1.5'],
     ['Oso hormiguero detective', 'Sos un Oso hormiguero detective', '🔎', ['Metiste la nariz en cada pista y resolviste el caso.', 'Metés la nariz donde nadie se anima. Por eso descubrís cosas.'], 'purr'],
     ['Tortuga maratonista', 'Sos una Tortuga maratonista', '🐢', ['Todos se rieron cuando te anotaste en la maratón. Las liebres todavía buscan el camino.', 'Vivís cien años porque no te estresás. Aprobaste con calma.'], 'tada'],
     ['Hornero arquitecto', 'Sos un Hornero arquitecto', '🐦', ['Armaste tu casita de barro, ¡y aprobaste!', 'Constructor nacional. Ladrillo por ladrillo.'], 'chirp'],
     ['Ballena cantora', 'Sos una Ballena cantora', '🐳', ['Cantaste la respuesta y se escuchó en todo el océano.', 'Gigante y afinada. ¡Aprobado!'], 'whale'],
     ['Pato de carrera', 'Sos un Pato de carrera', '🦆', ['Nadaste, caminaste y volaste… directo al aprobado.', 'El pato más rápido de la laguna.'], 'quack'],
-    ['Zorro astuto', 'Sos un Zorro astuto', '🦊', ['Encontraste la respuesta antes que nadie.', 'Astuto y simpático. Buena combinación.'], 'squeak'],
+    ['Zorro astuto', 'Sos un Zorro astuto', '🦊', ['Encontraste la respuesta antes que nadie.', 'Astuto y simpático. Buena combinación.'], 'squeak~0.8'],
     ['Paloma mensajera', 'Sos una Paloma mensajera', '🕊️', ['Llevaste la respuesta justo a destino.', 'Aprobado y con buena orientación.'], 'coo'],
     ['Delfín simpático', 'Sos un Delfín simpático', '🐬', ['Saltaste del agua con el aprobado en la boca.', 'Inteligente y buena onda.'], 'dolphin'],
     ['Carpincho viajero', 'Sos un Carpincho viajero', '🦫', ['Llegaste tranquilo, pero llegaste.', 'Relajado y aprobado. Así se hace.'], 'purr'],
     ['Gaviota exploradora', 'Sos una Gaviota exploradora', '🐦', ['Encontraste la respuesta desde el cielo.', 'Volaste alto y aterrizaste en el seis.'], 'eagle'],
+    ['Vigilante de la plaza', 'Sos el Vigilante de la plaza', '👮', ['Silbato en mano, nada se te escapa… casi nada.', 'Ordenaste las ideas como el tránsito: bastante bien.'], 'callwhistle'],
+    ['Tetera feliz', 'Sos una Tetera feliz', '🫖', ['Llegaste al punto justo para el mate.', 'Silbás contenta: hiciste las cosas bien.'], 'kettle'],
+    ['Lavarropas centrifugando', 'Sos un Lavarropas centrifugando', '🌀', ['Diste mil vueltas y saliste limpito.', 'Ruidoso, pero cumplidor.'], 'weird~1.1'],
+    ['Loro del almacén', 'Sos el Loro del almacén', '🦜', ['Repetís todo… y esta vez repetiste bien.', 'Le contestás a todos los clientes. Y aprobás.'], 'voice1~1.7'],
+    ['Cuervo inteligente', 'Sos un Cuervo inteligente', '🐦‍⬛', ['Los cuervos usan herramientas. Vos usaste la cabeza.', 'Graznido de aprobado.'], 'raven~0.85'],
+    ['Bicicletero del barrio', 'Sos el Bicicletero del barrio', '🔧', ['Arreglás todo con dos tuercas y mucho ingenio.', 'Te falta una tuerca para el diez.'], 'springr~0.75']
   ], jokes: ['¡Aprobaste! Ya sos del club de los que saben. Hay medialunas.', 'Lo sacaste adelante. Clap, clap, clap.', 'Le estás agarrando la mano. Vamos por más.', 'Raspando, pero adentro. Gol de rebote en el minuto noventa: vale igual.', 'Ya estás del lado de los que aprueban. No te agrandes. Bueno, un poquito.'] },
   { min: 7, chars: [
     ['Presidente de país del tercer mundo', 'Sos un Presidente de país del tercer mundo', '🎩', ['Prometiste saber el tema y, a diferencia de otros presidentes, cumpliste.', 'Ya tenés la banda presidencial. Ahora no te endeudes con el FMI.'], 'fanfare'],
     ['Cóndor andino', 'Sos un Cóndor andino', '🦅', ['Volaste tan alto que desde arriba se veían todas las respuestas.', 'Volás horas sin mover las alas. Aprovechaste bien lo que estudiaste.'], 'eagle'],
-    ['Capitán de barco pirata', 'Sos un Capitán de barco pirata', '🏴‍☠️', ['Años buscando el tesoro y era esta nota. Tu loro ya repite las respuestas.', 'La X del mapa marcaba el aprobado. ¡Al abordaje!'], 'horn'],
-    ['Chef con estrella', 'Sos un Chef con estrella', '👨‍🍳', ['Plato de restaurante caro. Le faltó una pizca de sal nomás.', 'Un poco más de práctica y te dan la segunda estrella.'], 'ding'],
+    ['Capitán de barco pirata', 'Sos un Capitán de barco pirata', '🏴‍☠️', ['Años buscando el tesoro y era esta nota. Tu loro ya repite las respuestas.', 'La X del mapa marcaba el aprobado. ¡Al abordaje!'], 'cannon'],
+    ['Chef con estrella', 'Sos un Chef con estrella', '👨‍🍳', ['Plato de restaurante caro. Le faltó una pizca de sal nomás.', 'Un poco más de práctica y te dan la segunda estrella.'], 'dishes'],
     ['Gaucho payador', 'Sos un Gaucho payador', '🪕', ['Contestaste en versos y encima estaba bien. Te ganaste un aplauso y un mate.', 'El payador improvisa. Vos no hizo falta: sabías.'], 'guitar'],
-    ['León con corona', 'Sos un León con corona', '🦁', ['Te pusiste la corona, rugiste, y las respuestas se acomodaron solas.', 'Dormís veinte horas y las otras cuatro sacás buenas notas.'], 'roar'],
+    ['León con corona', 'Sos un León con corona', '🦁', ['Te pusiste la corona, rugiste, y las respuestas se acomodaron solas.', 'Dormís veinte horas y las otras cuatro sacás buenas notas.'], 'lion'],
     ['Jirafa ingeniera', 'Sos una Jirafa ingeniera', '🦒', ['Hiciste un puente con el cuello para que todos crucen el río. Inteligente y solidaria.', 'Ya ves el tema desde arriba, sin esfuerzo.'], 'ding'],
     ['Abeja reina', 'Sos una Abeja reina', '🐝', ['Votaron en la colmena quién sabía más. Ganaste vos.', 'Hiciste un examen dulce como la miel.'], 'buzz'],
-    ['Yaguareté guardián', 'Sos un Yaguareté guardián', '🐆', ['Cuidaste el tema como tu selva.', 'Fuerte, ágil y bien argentino.'], 'roar'],
-    ['DJ del conocimiento', 'Sos un DJ del conocimiento', '🎧', ['Mezclaste las ideas y la pista quedó bárbara.', 'Subile el volumen a ese siete.'], 'laser'],
-    ['Búho bibliotecario', 'Sos un Búho bibliotecario', '🦉', ['Te sabés dónde está cada libro. Y lo que dice.', 'Shh… estamos aprobando.'], 'hoot'],
+    ['Yaguareté guardián', 'Sos un Yaguareté guardián', '🐆', ['Cuidaste el tema como tu selva.', 'Fuerte, ágil y bien argentino.'], 'lion~0.85'],
+    ['DJ del conocimiento', 'Sos un DJ del conocimiento', '🎧', ['Mezclaste las ideas y la pista quedó bárbara.', 'Subile el volumen a ese siete.'], 'record'],
+    ['Búho bibliotecario', 'Sos un Búho bibliotecario', '🦉', ['Te sabés dónde está cada libro. Y lo que dice.', 'Shh… estamos aprobando.'], 'owl'],
     ['Capitán de selección', 'Sos un Capitán de selección', '⚽', ['Llevás la cinta y el equipo te sigue.', 'Gol de cabeza en el examen.'], 'fanfare'],
-    ['Lobo de la manada', 'Sos un Lobo de la manada', '🐺', ['La manada te sigue porque sabés el camino.', 'Aullaste la respuesta correcta.'], 'roar'],
+    ['Lobo de la manada', 'Sos un Lobo de la manada', '🐺', ['La manada te sigue porque sabés el camino.', 'Aullaste la respuesta correcta.'], 'beast~0.9'],
     ['Caballo campeón', 'Sos un Caballo campeón', '🐎', ['Ganaste la carrera por varias cabezas.', 'Galopaste derecho al siete.'], 'neigh'],
     ['Elefante memorioso', 'Sos un Elefante memorioso', '🐘', ['No te olvidás de nada. ¡Grande!', 'Pisás fuerte en el tema.'], 'trumpet'],
     ['Detective del saber', 'Sos un Detective del saber', '🕵️', ['Encontraste cada pista y resolviste el caso.', 'Elemental, querido alumno.'], 'ding'],
+    ['Intendente con banda', 'Sos un Intendente con banda', '🎖️', ['Cortaste la cinta y aplaudieron todos.', 'Prometiste estudiar y cumpliste. ¡Raro en un intendente!'], 'clap'],
+    ['Bombero héroe', 'Sos un Bombero héroe', '🚒', ['Apagaste todas las dudas con la manguera del saber.', 'Subiste la escalera hasta la respuesta.'], 'bell'],
+    ['Árbitro con silbato de oro', 'Sos un Árbitro con silbato de oro', '🏟️', ['Cobraste todo bien: ni el VAR te corrige.', 'Tarjeta verde para vos.'], 'callwhistle~0.9'],
+    ['Locutor de radio', 'Sos un Locutor de radio', '📻', ['Tu voz informa y tus respuestas también.', 'En el aire, y con buena nota.'], 'record~1.1'],
+    ['Gong del templo', 'Sos el Gong del templo', '🥁', ['Sonaste fuerte y claro.', 'Tu respuesta resonó en toda la sala.'], 'gong~1.1'],
+    ['Panadero de medialunas', 'Sos un Panadero de medialunas', '🥐', ['Las ideas salieron doraditas.', 'Docena de respuestas, todas ricas.'], 'dooropen~0.9']
   ], jokes: ['Ya jugás en primera. Falta poquito para la Selección.', 'Si esto fuera una carrera, ya estás en el podio.', 'El profe está tan contento que ya piensa en el próximo tema.', '¡Pará, pará! ¿Me estás cargando? Ese siete vale un asado.', 'Ya sabés más que mi cuñado, que opina de todo.'] },
   { min: 8, chars: [
-    ['Homo erectus', 'Sos un Homo erectus', '🦍', ['Te paraste derechito, miraste alrededor y dijiste: "Uy, ahora entiendo todo".', 'La evolución tardó millones de años en pararse. Vos, un examen.'], 'drum'],
-    ['Lechuza doctora', 'Sos una Lechuza doctora', '🦉', ['Todo el bosque viene a consultarte. Hoy atendiste vos.', 'Ves clarito hasta de noche. Doctora en el tema.'], 'hoot'],
+    ['Homo erectus', 'Sos un Homo erectus', '🦍', ['Te paraste derechito, miraste alrededor y dijiste: "Uy, ahora entiendo todo".', 'La evolución tardó millones de años en pararse. Vos, un examen.'], 'voice3~0.7'],
+    ['Lechuza doctora', 'Sos una Lechuza doctora', '🦉', ['Todo el bosque viene a consultarte. Hoy atendiste vos.', 'Ves clarito hasta de noche. Doctora en el tema.'], 'owl~1.15'],
     ['Astronauta', 'Sos un Astronauta', '🧑‍🚀', ['Despegaste y llegaste a la Luna. "Houston, no tenemos ningún problema".', 'Este tema ya te queda chico, te vas al espacio.'], 'rocket'],
-    ['Mago de barrio', 'Sos un Mago de barrio', '🧙', ['Abracadabra, y de la galera salieron todas las respuestas.', 'No es magia, es práctica. Por eso salió el truco.'], 'magic'],
-    ['Científico loco', 'Sos un Científico loco', '🧪', ['Mezclaste dos ideas, salió humo violeta y una respuesta perfecta. ¡Eureka!', 'Los científicos se equivocan mil veces. Vos acertaste de una.'], 'laser'],
+    ['Mago de barrio', 'Sos un Mago de barrio', '🧙', ['Abracadabra, y de la galera salieron todas las respuestas.', 'No es magia, es práctica. Por eso salió el truco.'], 'magicr'],
+    ['Científico loco', 'Sos un Científico loco', '🧪', ['Mezclaste dos ideas, salió humo violeta y una respuesta perfecta. ¡Eureka!', 'Los científicos se equivocan mil veces. Vos acertaste de una.'], 'laugh~0.8'],
     ['Elefante con memoria de oro', 'Sos un Elefante con memoria de oro', '🐘', ['Te acordaste de todo. Hasta del chiste del módulo anterior.', 'Hoy tu conocimiento fue tamaño elefante.'], 'trumpet'],
     ['Detective de lupa', 'Sos un Detective de lupa', '🕵️', ['Lupa en mano, encontraste cada pista. "Elemental". Caso cerrado.', 'No se te escapó casi nada. Así trabaja un detective.'], 'ding'],
-    ['Puma inventor', 'Sos un Puma inventor', '🐆', ['Inventaste una máquina de aprobar exámenes. Funciona bárbaro, se ve.', 'Rápido, ágil y sin hacer ruido. Así respondiste.'], 'roar'],
+    ['Puma inventor', 'Sos un Puma inventor', '🐆', ['Inventaste una máquina de aprobar exámenes. Funciona bárbaro, se ve.', 'Rápido, ágil y sin hacer ruido. Así respondiste.'], 'lion~1.2'],
     ['Inventora de cohetes', 'Sos una Inventora de cohetes', '🚀', ['Tus respuestas despegan solas.', 'Cuenta regresiva y… ¡ocho!'], 'rocket'],
-    ['Pulpo genio', 'Sos un Pulpo genio', '🐙', ['Ocho brazos, ocho puntos. Casualidad no es.', 'Abriste el frasco del tema en dos segundos.'], 'bloop'],
+    ['Pulpo genio', 'Sos un Pulpo genio', '🐙', ['Ocho brazos, ocho puntos. Casualidad no es.', 'Abriste el frasco del tema en dos segundos.'], 'bubbling~0.8'],
     ['Pianista virtuoso', 'Sos un Pianista virtuoso', '🎹', ['Tocaste cada respuesta sin errar una nota.', 'Aplausos de pie para el concierto.'], 'guitar'],
     ['Orca estratega', 'Sos una Orca estratega', '🐋', ['Planeaste cada respuesta como una jugada.', 'La reina del océano, y del examen.'], 'whale'],
     ['Halcón peregrino', 'Sos un Halcón peregrino', '🦅', ['Viste la respuesta desde un kilómetro.', 'El más rápido del cielo. Y del examen.'], 'eagle'],
-    ['León sabio', 'Sos un León sabio', '🦁', ['Rugiste y el examen se asustó.', 'Rey de la selva y del tema.'], 'roar'],
+    ['León sabio', 'Sos un León sabio', '🦁', ['Rugiste y el examen se asustó.', 'Rey de la selva y del tema.'], 'lion~0.95'],
     ['Científica brillante', 'Sos una Científica brillante', '🔬', ['Hiciste el experimento y salió perfecto.', 'Eureka. Así, sin más.'], 'magic'],
-    ['Chef de cinco estrellas', 'Sos un Chef de cinco estrellas', '👨‍🍳', ['Cocinaste las respuestas al punto justo.', 'Plato perfecto. Ocho estrellas Michelin.'], 'tada'],
+    ['Chef de cinco estrellas', 'Sos un Chef de cinco estrellas', '👨‍🍳', ['Cocinaste las respuestas al punto justo.', 'Plato perfecto. Ocho estrellas Michelin.'], 'pot'],
+    ['Bibliotecaria con superpoderes', 'Sos una Bibliotecaria con superpoderes', '📚', ['Encontraste la respuesta en el estante justo.', 'Silencio, que acá se aprueba.'], 'paper~0.9'],
+    ['Capitán de submarino', 'Sos un Capitán de submarino', '🚢', ['Bajaste hasta lo más hondo del tema y volviste con el tesoro.', 'Periscopio arriba: se ve el diez.'], 'bubbling~0.7'],
+    ['Inventora de robots', 'Sos una Inventora de robots', '🤖', ['Tus ideas tienen tornillos y funcionan.', 'Tu robot aprobó, y vos también.'], 'powerup~0.9'],
+    ['Tren bala', 'Sos un Tren bala', '🚄', ['Llegaste a la respuesta antes que la pregunta.', 'Puntualidad japonesa y nota argentina.'], 'teleport~0.8'],
+    ['Médica de guardia', 'Sos una Médica de guardia', '🩺', ['Diagnosticaste la pregunta y la curaste.', 'Receta: seguir así.'], 'success~0.9'],
+    ['Rey del asado', 'Sos el Rey del asado', '🍖', ['Punto justo: ni crudo ni pasado.', 'Un aplauso para el asador. Y para tus respuestas.'], 'clap~1.15']
   ], jokes: ['Ya podrías explicarle el tema a otro. Y te entenderían.', 'El profe le contó a todos los otros profes.', 'Te falta muy poquito para la cima.', 'Me estás haciendo quedar mal a mí, que soy el profe.', 'Si esto fuera fútbol, ya te llaman de Europa.'] },
   { min: 9, chars: [
     ['Ninja supremo', 'Sos un Ninja supremo', '🥷', ['Entraste sin ruido, respondiste todo y el profe ni se dio cuenta de que terminaste.', 'Cinturón negro en este tema.'], 'swoosh'],
-    ['Dragón sabio', 'Sos un Dragón sabio', '🐉', ['Escupís fuego y respuestas correctas. Las dos queman.', 'Mil años de sabiduría en un solo examen.'], 'roar'],
-    ['Superhéroe del barrio', 'Sos un Superhéroe del barrio', '🦸', ['Salvaste el examen sin despeinarte la capa.', 'Tu superpoder: saberte el tema de memoria.'], 'hero'],
-    ['Campeón del mundo', 'Sos un Campeón del mundo', '🏆', ['Último minuto de la final, última pregunta y… ¡gol! Vuelta olímpica.', '¡Dale campeón! Se nota el entrenamiento.'], 'fanfare'],
+    ['Dragón sabio', 'Sos un Dragón sabio', '🐉', ['Escupís fuego y respuestas correctas. Las dos queman.', 'Mil años de sabiduría en un solo examen.'], 'monster'],
+    ['Superhéroe del barrio', 'Sos un Superhéroe del barrio', '🦸', ['Salvaste el examen sin despeinarte la capa.', 'Tu superpoder: saberte el tema de memoria.'], 'powerup'],
+    ['Campeón del mundo', 'Sos un Campeón del mundo', '🏆', ['Último minuto de la final, última pregunta y… ¡gol! Vuelta olímpica.', '¡Dale campeón! Se nota el entrenamiento.'], 'victory'],
     ['Samurái del saber', 'Sos un Samurái del saber', '⚔️', ['Cortaste cada pregunta a la mitad, hiciste una reverencia y te fuiste.', 'Honor, disciplina y conocimiento. Todo junto.'], 'swoosh'],
     ['Robot del futuro', 'Sos un Robot del futuro', '🤖', ['Vino un robot del año 3000, te escaneó y dijo: "Error. Este humano sabe más que yo".', 'Nivel de conocimiento: altísimo. Recomendación: seguí así.'], 'robot'],
     ['Águila imperial', 'Sos un Águila imperial', '🦅', ['Viste la respuesta desde tres kilómetros y bajaste en picada a agarrarla.', 'La mejor vista del cielo y del tema.'], 'eagle'],
     ['Fénix renacido', 'Sos un Fénix renacido', '🔥', ['Quemaste el tema de tanto estudiarlo y renaciste sabio.', 'Tus respuestas curan cualquier duda.'], 'magic'],
-    ['Mago supremo', 'Sos un Mago supremo', '🪄', ['Agitaste la varita y apareció un nueve.', 'Ni el mago del barrio te alcanza.'], 'magic'],
+    ['Mago supremo', 'Sos un Mago supremo', '🪄', ['Agitaste la varita y apareció un nueve.', 'Ni el mago del barrio te alcanza.'], 'magicr~0.85'],
     ['Guepardo relámpago', 'Sos un Guepardo relámpago', '🐆', ['Respondiste tan rápido que el examen quedó atrás.', 'El más veloz de la sabana del saber.'], 'swoosh'],
     ['Astronauta comandante', 'Sos un Astronauta comandante', '👩‍🚀', ['Pilotaste la nave sin un solo error.', 'Misión cumplida, comandante.'], 'rocket'],
-    ['Maestro del ajedrez', 'Sos un Maestro del ajedrez', '♟️', ['Jaque mate al examen en pocas jugadas.', 'Pensaste diez movidas adelante.'], 'ding'],
+    ['Maestro del ajedrez', 'Sos un Maestro del ajedrez', '♟️', ['Jaque mate al examen en pocas jugadas.', 'Pensaste diez movidas adelante.'], 'gong~1.2'],
     ['Fénix de fuego azul', 'Sos un Fénix de fuego azul', '🔥', ['Ardiste de sabiduría. ¡Qué nivel!', 'Renaciste en modo genio.'], 'magic'],
     ['Superhéroe del aula', 'Sos un Superhéroe del aula', '🦸', ['Salvaste el examen con tu súper cerebro.', 'Capa puesta, nueve en el bolsillo.'], 'hero'],
     ['Cóndor de los Andes', 'Sos un Cóndor de los Andes', '🦅', ['Desde arriba lo ves todo. Y todo bien.', 'Majestuosa y sin errores.'], 'eagle'],
-    ['Genio de la lámpara', 'Sos un Genio de la lámpara', '🧞', ['Te pidieron tres deseos y diste diez respuestas.', 'Frotaron la lámpara y salió un nueve.'], 'magic'],
+    ['Genio de la lámpara', 'Sos un Genio de la lámpara', '🧞', ['Te pidieron tres deseos y diste diez respuestas.', 'Frotaron la lámpara y salió un nueve.'], 'teleport'],
+    ['Director de orquesta', 'Sos un Director de orquesta', '🎼', ['Cada respuesta sonó afinada.', 'Con la batuta en la mano, todo suena perfecto.'], 'cymbal~1.1'],
+    ['Campanero de la catedral', 'Sos el Campanero de la catedral', '🔔', ['Tus respuestas se escuchan desde todo el barrio.', 'Din, don: aprobado.'], 'bell~0.8'],
+    ['Dinosaurio rey', 'Sos el Dinosaurio rey', '🦖', ['Dominaste el tema como en el Jurásico.', 'Rugido de campeón.'], 'dino3'],
+    ['Capitana de la nave espacial', 'Sos la Capitana de la nave espacial', '🛸', ['Rumbo fijo a la estrella del diez.', 'Despegaste y no paraste.'], 'teleport~1.05'],
+    ['Faro del puerto', 'Sos el Faro del puerto', '🗼', ['Iluminás a todos los barcos perdidos.', 'Tu luz se ve desde lejísimos.'], 'shipbell~0.8'],
+    ['Volcán en erupción', 'Sos un Volcán en erupción', '🌋', ['Explotaste de sabiduría.', 'Lava de respuestas correctas.'], 'cannon~0.7']
   ], jokes: ['Casi perfecto. El examen te quiere pedir un autógrafo.', 'Nivel maestro. Pocos llegan hasta acá.', 'Si seguís así, el profe te va a pedir clases a vos.', '¿Querés que te aplauda de pie? Ya estoy de pie.', 'No tengo nada para corregirte, y a un profe eso le duele.'] },
   { min: 9.7, chars: [
     ['Dios', 'Sos un Dios', '⚡', ['El examen te vio y te pidió disculpas por molestarte.', 'Ya no estudiás el tema: el tema te estudia a vos. Y saca un dos.'], 'thunder'],
-    ['Leyenda viviente', 'Sos una Leyenda viviente', '🌟', ['Te van a hacer una estatua en la plaza. Con palomas, pero estatua.', 'Dentro de mil años van a contar este examen.'], 'choir'],
-    ['Rey del universo', 'Sos el Rey del universo', '👑', ['Las estrellas votaron al rey del universo. Ganaste por unanimidad.', 'Hasta el sol te pidió un autógrafo.'], 'fanfare'],
+    ['Leyenda viviente', 'Sos una Leyenda viviente', '🌟', ['Te van a hacer una estatua en la plaza. Con palomas, pero estatua.', 'Dentro de mil años van a contar este examen.'], 'victory~0.9'],
+    ['Rey del universo', 'Sos el Rey del universo', '👑', ['Las estrellas votaron al rey del universo. Ganaste por unanimidad.', 'Hasta el sol te pidió un autógrafo.'], 'gong'],
     ['Unicornio genio', 'Sos un Unicornio genio', '🦄', ['Un unicornio aparece cada mil años y saca diez. Hoy apareció.', 'Tan perfecto que el arcoíris se puso celoso.'], 'magic'],
     ['Mente galáctica', 'Sos una Mente galáctica', '🌌', ['Los extraterrestres te escucharon y ya te mandaron la nave para que les des clases.', 'Tu cerebro ya no entra en este planeta.'], 'choir'],
     ['Sol en persona', 'Sos el Sol en persona', '☀️', ['Brillaste tanto que el profe se tuvo que poner anteojos de sol.', 'Este examen tuvo luz propia: la tuya.'], 'choir'],
-    ['Cerebro cósmico', 'Sos un Cerebro cósmico', '🧠', ['Quisieron medir tu cerebro y se rompió la máquina.', 'Tus neuronas hicieron una fiesta y todas sacaron diez.'], 'laser'],
-    ['Titán del Olimpo', 'Sos un Titán del Olimpo', '🏛️', ['Los dioses del Olimpo te vieron y te hicieron lugar en la mesa.', 'Sostenés todo el tema sin despeinarte.'], 'thunder'],
+    ['Cerebro cósmico', 'Sos un Cerebro cósmico', '🧠', ['Quisieron medir tu cerebro y se rompió la máquina.', 'Tus neuronas hicieron una fiesta y todas sacaron diez.'], 'teleport~1.2'],
+    ['Titán del Olimpo', 'Sos un Titán del Olimpo', '🏛️', ['Los dioses del Olimpo te vieron y te hicieron lugar en la mesa.', 'Sostenés todo el tema sin despeinarte.'], 'cannon~0.8'],
     ['Galaxia andante', 'Sos una Galaxia andante', '🌠', ['Tenés millones de estrellas en la cabeza.', 'El universo te pidió una foto.'], 'choir'],
     ['Fuerza de la naturaleza', 'Sos una Fuerza de la naturaleza', '🌪️', ['Pasaste por el examen como un huracán.', 'Nadie te puede parar.'], 'thunder'],
-    ['Profesor del profesor', 'Sos el Profesor del profesor', '🎓', ['Ahora el profe toma clases con vos.', 'Te ganaste la tiza dorada.'], 'tada'],
-    ['Dragón dorado', 'Sos un Dragón dorado', '🐲', ['Brillás tanto que encandilás.', 'Leyenda dorada del conocimiento.'], 'roar'],
+    ['Profesor del profesor', 'Sos el Profesor del profesor', '🎓', ['Ahora el profe toma clases con vos.', 'Te ganaste la tiza dorada.'], 'success'],
+    ['Dragón dorado', 'Sos un Dragón dorado', '🐲', ['Brillás tanto que encandilás.', 'Leyenda dorada del conocimiento.'], 'dino3~0.8'],
     ['Sol radiante', 'Sos un Sol radiante', '☀️', ['Iluminás a todo el que estudia con vos.', 'Brillás más que nunca.'], 'choir'],
     ['Unicornio legendario', 'Sos un Unicornio legendario', '🦄', ['Dicen que no existís. Acá estás.', 'Mágico, único y perfecto.'], 'magic'],
     ['Emperador del saber', 'Sos el Emperador del saber', '👑', ['Hasta los planetas te hacen reverencia.', 'Corona merecida.'], 'fanfare'],
-    ['Mente infinita', 'Sos una Mente infinita', '🧠', ['Tu cabeza tiene su propia galaxia.', 'Pensás a la velocidad de la luz.'], 'thunder'],
+    ['Mente infinita', 'Sos una Mente infinita', '🧠', ['Tu cabeza tiene su propia galaxia.', 'Pensás a la velocidad de la luz.'], 'cymbal'],
+    ['Tormenta del saber', 'Sos la Tormenta del saber', '⛈️', ['Rayos y truenos de respuestas perfectas.', 'Llovieron dieces.'], 'thunder'],
+    ['Big Bang con anteojos', 'Sos un Big Bang con anteojos', '💥', ['Empezaste un universo nuevo de sabiduría.', 'De la nada, todo. Así contestaste.'], 'cannon'],
+    ['Trofeo de oro macizo', 'Sos un Trofeo de oro macizo', '🏆', ['Te ponen en la vitrina más alta.', 'Brillás tanto que hay que usar anteojos de sol.'], 'victory'],
+    ['Rey de la selva y del aula', 'Sos el Rey de la selva y del aula', '🦁', ['Rugís y todos se callan para escucharte.', 'Corona doble: selva y aula.'], 'lion~0.8'],
+    ['Monstruo de las preguntas', 'Sos el Monstruo de las preguntas', '👹', ['Te comiste el examen entero.', 'Las preguntas te tienen miedo a vos.'], 'monster~0.9'],
+    ['Campana de la victoria', 'Sos la Campana de la victoria', '🔔', ['Sonás cuando alguien hace historia. Hoy sonaste vos.', 'Tan, tan: diez.'], 'gong~0.8']
   ], jokes: ['No hay nada más que enseñarte. El profe se va de vacaciones.', 'Desbloqueaste el final secreto del juego.', 'Te reservamos el aula y la tiza.', 'Me rindo. Te doy la tiza, el pizarrón y el sueldo. Bueno, el sueldo no.', 'Este examen lo cuelgo en el living, al lado de la foto de la abuela.'] },
 ];
 const levelFor = (n) => [...LEVELS].reverse().find((l) => n >= l.min) || LEVELS[0];
@@ -1562,7 +1684,7 @@ function pickLevel(n) {
   const joke = fresh[Math.floor(Math.random() * fresh.length)];
   rot.used.push(joke); if (rot.used.length > 300) rot.used = rot.used.slice(-300);
   store.set('profe-rot2', rot);
-  return { name: 'Nivel ' + c[0], sos: c[1], emoji: c[2], sound: c[4], joke };
+  return { name: 'Nivel ' + c[0], sos: c[1], emoji: c[2], sound: charSound(c[4], c[0]), joke };
 }
 const jokeFor = (n) => pickLevel(n).joke;
 const levelOf = (n) => { const c = levelFor(n).chars[0]; return [n, 'Nivel ' + c[0], c[2], c[1]]; };
