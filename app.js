@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 42;
+const APP_VERSION = 43;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -466,7 +466,14 @@ function startCountdown(spoken, onZero, everySecond) {
 // ---------- Navegación ----------
 let view = { name: 'home' };
 const stack = [];
+// Recarga con la versión nueva solo si no está en medio de una clase, examen o duelo.
+function reloadIfIdle() {
+  if (!window.__needReload || window.__reloaded) return;
+  if (['module', 'exam', 'duelPlay', 'chat'].includes(view.name)) return;
+  window.__reloaded = true; location.reload();
+}
 function go(name, params = {}, push = true) {
+  if (window.__needReload && !['module', 'exam', 'duelPlay'].includes(name)) { window.__reloaded = true; return location.reload(); }
   stopSpeaking(); clearCountdown();
   document.querySelectorAll('.confetti').forEach((c) => c.remove());
   if (push) stack.push(view);
@@ -486,7 +493,8 @@ function setHeader(title) {
 }
 const views = {};
 // Sin clave propia y sin aprobación del administrador: solo se ve la pantalla de pedir acceso.
-const needsAccess = () => !settings.key && !(settings.access && settings.access.status === 'approved');
+// Todos entran con solicitud aprobada por el administrador. Solo el administrador entra sin pedir.
+const needsAccess = () => !(settings.access && (settings.access.status === 'approved' || settings.access.is_admin));
 let lastShown = null;
 function render() {
   if (needsAccess() && !['access', 'settings'].includes(view.name)) view = { name: 'access' };
@@ -1508,6 +1516,9 @@ async function refreshAccess() {
     const rows = await sbRpc('my_status', { p_player: settings.playerId });
     const a = rows && rows[0];
     if (a) { settings.access = { status: a.status, is_admin: a.is_admin, has_key: a.has_key }; save(); }
+    else if (Array.isArray(rows)) { settings.access = null; save(); } // el servidor no lo conoce: tiene que pedir acceso
+    // La clave de Claude vive solo en el servidor y en el teléfono del administrador: si este dispositivo no es del admin, se borra.
+    if (Array.isArray(rows) && settings.key && !(a && a.is_admin)) { settings.key = ''; save(); }
   } catch {}
   return settings.access;
 }
@@ -1790,7 +1801,11 @@ if ('serviceWorker' in navigator) {
   // Busca versiones nuevas cada vez que se abre la app y recarga sola si hay una.
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => r.update()).catch(() => {});
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !window.__reloaded) { window.__reloaded = true; location.reload(); } });
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !window.__reloaded) { window.__needReload = true; reloadIfIdle(); } });
+  // En la compu la pestaña queda abierta días: busca versión nueva cada 10 minutos y al volver a la pestaña.
+  const check = () => navigator.serviceWorker.getRegistration().then((r) => r && r.update()).catch(() => {});
+  setInterval(check, 10 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
 }
 render();
 // Precarga la voz natural en segundo plano, así la primera lectura no se demora.
