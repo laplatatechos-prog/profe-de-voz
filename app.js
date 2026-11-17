@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 43;
+const APP_VERSION = 44;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -359,10 +359,12 @@ const REAL = {
   squeak: (c, o, t) => { [0, .2, .33].forEach((d) => voice(c, o, t + d, .1, { f: [[0, 2800], [.5, 3500], [1, 3000]], v: [[0, [3000, 6000, 8000]]], type: 'triangle', vol: .45, q: 3, atk: .01, rel: .04 })); return .5; },
   chirp: (c, o, t) => { let d = 0; for (let i = 0; i < 6; i++) { const top = 3600 + Math.random() * 1200, l = .06 + Math.random() * .05; tone(c, o, t + d, l, top, top * .55, 'sine', .3, i % 2 ? 40 : 0); d += l + .03; } return d + .1; },
   whale: (c, o, t) => { voice(c, o, t, 2, { f: [[0, 180], [.4, 420], [.7, 380], [1, 140]], v: [[0, A.u], [.5, A.o], [1, A.u]], type: 'triangle', vol: .6, vib: 3, vibD: .03, breath: .05, q: 4, atk: .3, rel: .6 }); return 2; },
+  // trompeta triste de perder: "wah, wah, wah, waaah" bajando
+  sadtrombone: (c, o, t) => { [[0, 392, .42], [.48, 370, .42], [.96, 349, .42], [1.44, 330, 1.1]].forEach(([d, f, l], i) => voice(c, o, t + d, l, { f: [[0, f], [1, i === 3 ? f * .92 : f * .97]], v: [[0, A.u], [.35, A.a], [1, i === 3 ? A.u : A.o]], vol: .5, vib: i === 3 ? 6 : 0, vibD: .025, breath: .08, q: 6, atk: .03, rel: .12 })); return 2.6; },
   dolphin: (c, o, t) => { for (let i = 0; i < 8; i++) noise(c, o, t + i * .03, .01, 6000, 6000, .35, 2); [[.3, 2200, 4200], [.55, 4000, 2600], [.8, 2600, 4800]].forEach(([d, a, b]) => tone(c, o, t + d, .2, a, b, 'sine', .25)); return 1.1; },
 };
 // mismo volumen para todos (medido): unos salían muy fuertes y otros muy bajitos
-const REAL_GAIN = { moo: 1.15, meow: .4, bark: .5, quack: 1.6, croak: 1.7, hoot: .45, coo: .32, neigh: 2.2, heehaw: 1.6, roar: .9, purr: 1.1, honk: 1.8, eagle: .63, monkey: 1.4, buzz: 1.35, squeak: .38, chirp: 2, whale: .3, dolphin: 2 };
+const REAL_GAIN = { sadtrombone: 1.2, moo: 1.15, meow: .4, bark: .5, quack: 1.6, croak: 1.7, hoot: .45, coo: .32, neigh: 2.2, heehaw: 1.6, roar: .9, purr: 1.1, honk: 1.8, eagle: .63, monkey: 1.4, buzz: 1.35, squeak: .38, chirp: 2, whale: .3, dolphin: 2 };
 for (const k in REAL) SOUNDS[k] = (c, o, t) => { const g = c.createGain(); g.gain.value = REAL_GAIN[k] || 1; g.connect(o); return REAL[k](c, g, t); };
 function playSfx(name, once) {
   return new Promise((res) => {
@@ -993,8 +995,10 @@ async function createDuel(topicKey, free, target, targetObj) {
   try {
     const tema = freeT ? freeT : topicKey === 'mezcla' ? 'mezcla de matemática, lengua, ciencias naturales, historia argentina, geografía y cultura general' : duelTopicName(topicKey);
     const j = await askJSON('Sos un maestro de escuela primaria argentina que arma juegos de preguntas.',
-      `Armá ${DUEL_N} preguntas de enseñanza básica (escuela primaria) sobre: ${tema}. Cortas (máximo 15 palabras), claras, con UNA sola respuesta correcta y corta (una palabra, un número o una frase corta), que se pueda contestar en menos de 20 segundos. Variadas, de fácil a media. Nada de opción múltiple. ${Q_RULE} Forma: {"questions":["...","..."]}`, 900, FAST_MODEL);
-    const qs = (j.questions || []).filter((q) => typeof q === 'string' && q.trim()).slice(0, DUEL_N);
+      `Armá ${DUEL_N} grupos de preguntas de enseñanza básica (escuela primaria) sobre: ${tema}. Cada grupo tiene 3 preguntas DISTINTAS entre sí (con respuestas distintas) pero del MISMO subtema y la MISMA dificultad, para que cada jugador reciba una diferente y el duelo sea justo. ` +
+      `Ejemplo de grupo: ["¿Cuánto es 7 por 8?","¿Cuánto es 6 por 9?","¿Cuánto es 8 por 7 menos 2?"] no vale porque la última es más difícil; tiene que ser parejo. ` +
+      `Cada pregunta: corta (máximo 15 palabras), clara, con UNA sola respuesta correcta y corta (una palabra, un número o una frase corta), que se pueda contestar en menos de 20 segundos. Los grupos van variados y de fácil a media. Nada de opción múltiple. ${Q_RULE} Forma: {"slots":[["...","...","..."],["...","...","..."]]}`, 2500, FAST_MODEL);
+    const qs = (j.slots || []).map((g) => (Array.isArray(g) ? g : [g]).filter((q) => typeof q === 'string' && q.trim()).slice(0, 3)).filter((g) => g.length >= 2).slice(0, DUEL_N);
     if (qs.length < 3) throw new Error('No pude armar las preguntas. Probá de nuevo.');
     const id = await sbRpc('create_duel2', { p_player: settings.playerId, p_name: settings.name, p_topic: freeT || duelTopicName(topicKey), p_diff: 'basico', p_questions: qs, p_target: target || null });
     if (!id) throw new Error('No pude crear el duelo. Probá de nuevo.');
@@ -1020,7 +1024,7 @@ views.duel = () => {
       <div class="card ask-card"><div class="ask-q">⚔️ ${esc(d.topic)}</div>
         <div class="muted small">Desafío de ${esc(d.mine ? 'vos' : d.creator_name)}${d.target_name ? ` para ${esc(d.for_me ? 'vos' : d.target_name)}` : ''} · ${d.questions.length} preguntas · ${DUEL_T} s cada una</div></div>
       ${verdict ? `<div class="duel-verdict">${verdict}</div>` : ''}
-      <div class="duel-board">${rs.length ? rs.map((r, i) => `<div class="duel-score ${r.me ? 'me' : ''} ${allDone ? 'final' : ''}"><span class="duel-pos">${i + 1}</span>${allDone ? `<span class="duel-char"><span class="anim-loop ${animOf(duelChar(d, r).sound)}">${duelChar(d, r).emoji}</span></span>` : ''}<b class="grow">${esc(r.me ? 'Vos' : r.name)}${allDone ? `<span class="duel-sos">${esc(duelChar(d, r).sos)} · nota ${fmt(r.avg || 0)}</span>` : ''}</b>
+      <div class="duel-board">${rs.length ? rs.map((r, i) => `<div class="duel-score ${r.me ? 'me' : ''} ${allDone ? 'final' : ''}"><span class="duel-pos">${i + 1}</span>${allDone ? `<span class="duel-char"><span class="anim-loop ${animOf(duelChar(d, r, rs).sound)}">${duelChar(d, r, rs).emoji}</span></span>` : ''}<b class="grow">${esc(r.me ? 'Vos' : r.name)}${allDone ? `<span class="duel-sos">${esc(duelChar(d, r, rs).sos)} · nota ${fmt(r.avg || 0)}</span><span class="duel-joke">${esc(duelChar(d, r, rs).joke)}</span>` : ''}</b>
         <span class="muted small">${r.done ? secs(r.seconds) : `jugando ${r.cum.length}/${d.questions.length}`}</span><span class="duel-pts">${r.points}</span></div>`).join('') : '<p class="muted">Nadie jugó todavía.</p>'}</div>
       ${!me || !me.done ? `<button class="block" id="playDuel" style="margin-top:12px">${me ? 'Seguir jugando' : '¡Jugar ahora!'} →</button>` : ''}
       <button class="block ${me && me.done ? '' : 'soft'}" id="shareDuel" style="margin-top:8px">📤 Desafiar a alguien con este duelo</button>
@@ -1028,6 +1032,7 @@ views.duel = () => {
       <button class="block soft" id="toComp" style="margin-top:8px">⚔️ Volver a Competencia</button>`;
     document.getElementById('duelChat').onclick = () => go('chat', { room: d.id, title: d.topic });
     if (allDone && verdict) announceDuel(d, rs);
+    const vEl = app.querySelector('.duel-verdict'); if (vEl && allDone && bigGap(rs)) vEl.insertAdjacentHTML('beforeend', '<div class="small" style="font-weight:700">¡Qué paliza! 😱</div>');
     const pd = document.getElementById('playDuel');
     if (pd) pd.onclick = () => { if (me) toast('Ya habías empezado este duelo: cada uno juega una sola vez, así que queda con lo que tenías.'); startDuelPlay(d, me); };
     document.getElementById('shareDuel').onclick = () => shareDuel(d);
@@ -1042,36 +1047,77 @@ views.duel = () => {
   stopDuelPoll();
   duelPoll = setInterval(() => { if (view.name !== 'duel') return stopDuelPoll(); if (view.d && view.d.results.length > 1 && view.d.results.every((r) => r.done)) return; load(); }, 3000);
 };
+// Chistes del final del duelo: al que perdió (cargadas en buena onda, aptas para chicos) y al que ganó. Rotan sin repetirse.
+const LOSER_JOKES = [
+  'perdiste por tanto que el marcador pidió ayuda psicológica.', 'te ganaron tan fácil que el otro bostezó en la mitad.',
+  'tus respuestas llegaron tarde, como el colectivo un domingo.', 'fuiste a la guerra con una cuchara de plástico.',
+  'el ganador corrió en Fórmula 1 y vos en monopatín sin ruedas.', 'quedaste tan atrás que el último te saludaba de lejos.',
+  'hasta la calculadora se tapó los ojos.', 'tranqui: perder también es un arte… y vos sos un artista.',
+  'si esto fuera fútbol, te metieron goles hasta en el vestuario.', 'el profe anotó tu puntaje en lápiz, por si mejora solo.',
+  'tus neuronas pidieron vacaciones sin avisar.', 'llegaste segundo… de dos.', 'la tortuga te pasó, saludó y siguió de largo.',
+  'jugaste con el cerebro en modo avión.', 'el mate se enfrió esperando una respuesta tuya.',
+];
+const WINNER_JOKES = [
+  'ganaste tan fácil que te sobró tiempo para tomar un mate.', 'el podio te queda chico.', 'contestaste más rápido que la luz… y la luz se quejó.',
+  'tu cerebro hoy vino con turbo.', 'pedí la copa, que ya la ganaste.', 'hasta el profe te pidió un autógrafo.', 'jugaste en modo leyenda.',
+];
+const bigGap = (rs) => rs.length > 1 && rs[0].points - rs[rs.length - 1].points >= 250;
 // Personaje de cada jugador según su nota (0 a 10). Siempre el mismo para ese duelo, así los dos ven lo mismo.
-function duelChar(d, r) {
-  const l = levelFor(r.avg || 0), key = d.id + '|' + r.name;
+// Si la diferencia es enorme: el ganador recibe un personaje del nivel más alto y el que perdió uno del más bajo.
+function duelChar(d, r, rs) {
+  rs = rs || (view.d && view.d.results) || [];
+  let l = levelFor(r.avg || 0);
+  if (bigGap(rs) && rs.every((x) => x.done)) { if (rs[0].name === r.name && rs[0].me === r.me) l = LEVELS[LEVELS.length - 1]; else if (rs[rs.length - 1].name === r.name && rs[rs.length - 1].me === r.me) l = LEVELS[0]; }
+  const key = d.id + '|' + r.name;
   let h = 0; for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   const c = l.chars[h % l.chars.length];
-  return { name: c[0], sos: c[1], emoji: c[2], sound: c[4] };
+  return { name: c[0], sos: c[1], emoji: c[2], sound: c[4], joke: c[3][h % c[3].length] };
 }
-// Al terminar: trompetas y la voz dice quién ganó, con el personaje de cada uno. Una sola vez por duelo.
+// Al terminar: trompetas y la voz dice quién ganó, con el personaje y chistes de cada uno. Una sola vez por duelo.
 function announceDuel(d, rs) {
   const said = store.get('profe-duel-said', []);
   if (said.includes(d.id)) return;
   store.set('profe-duel-said', said.concat(d.id).slice(-100));
   const top = rs[0], tie = rs.length > 1 && rs[1].points === top.points && rs[1].seconds === top.seconds;
-  const who = (r) => (r.me ? 'vos' : r.name);
-  const sos = (r) => duelChar(d, r).sos.replace(/^Sos /, r.me ? 'sos ' : 'es ');
+  const huge = !tie && bigGap(rs);
+  const sos = (r) => duelChar(d, r, rs).sos.replace(/^Sos /, r.me ? 'sos ' : 'es ');
+  const voc = (r) => (r.me ? '' : r.name + ', ');
+  const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
+  const joke = (r, list) => cap(voc(r) + rotPick(list === LOSER_JOKES ? 'loser' : 'winner', list));
   const head = tie ? '¡Empate!' : top.me ? '¡Ganaste vos!' : `¡Ganó ${top.name}!`;
-  const lines = rs.map((r) => `${r.me ? 'Vos' : r.name}: ${r.points} puntos, ${r.me ? 'y ' : 'y '}${sos(r)}.`).join(' {{p}} ');
+  const lines = rs.map((r, i) => {
+    const base = `${r.me ? 'Vos' : r.name}: ${r.points} puntos, y ${sos(r)}.`;
+    if (tie) return base;
+    if (i === 0) return `${base} {{s:${duelChar(d, r, rs).sound}}} ${dramatic(duelChar(d, r, rs).joke)} ${joke(r, WINNER_JOKES)}${huge ? ' {{p}} ' + joke(r, WINNER_JOKES) : ''}`;
+    // al que perdió: trompeta triste y chistes; si la diferencia es enorme, varios seguidos
+    const n = huge ? 3 : 1, js = [];
+    for (let k = 0; k < n; k++) js.push(joke(r, LOSER_JOKES));
+    return `{{s:sadtrombone}} ${base} ${dramatic(duelChar(d, r, rs).joke)} {{p}} ${js.join(' {{p}} ')}${huge ? ' {{p}} ¡Qué paliza!' : ''}`;
+  }).join(' {{p}} ');
   speak(`{{s:fanfare}} ${head} {{p}} ${lines}`);
   if (top.me || tie) confetti();
 }
-function startDuelPlay(d, me) {
+// Cada jugador recibe su variante de cada pregunta (misma dificultad, distinta pregunta) y en su propio orden.
+const slotQs = (s) => (Array.isArray(s) ? s : [s]);
+function seeded(seed) { let h = 2166136261; for (const ch of seed) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 100000) / 100000; }; }
+function playerQuestions(d, variant) {
+  const rnd = seeded(d.id + '|' + settings.playerId + '|' + variant);
+  const qs = d.questions.map((s) => { const g = slotQs(s); return g[variant % g.length]; });
+  for (let i = qs.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [qs[i], qs[j]] = [qs[j], qs[i]]; }
+  return qs;
+}
+async function startDuelPlay(d, me) {
   if (me) { // ya lo empezó en otro momento: no se puede repetir, se cierra con lo que tenía
     sbRpc('duel_progress', { p_id: d.id, p_player: settings.playerId, p_name: settings.name, p_points: me.points, p_avg: me.avg || 0, p_seconds: me.seconds, p_answers: me.cum.map((c) => ({ cum: c })), p_done: true }).catch(() => {});
     view.d = null; return render();
   }
-  go('duelPlay', { id: d.id, d, idx: 0, ans: [], t0: 0, total: 0, rival: null }, false);
+  let variant = 0;
+  try { variant = await sbRpc('duel_join', { p_id: d.id, p_player: settings.playerId, p_name: settings.name }); } catch { return toast('No pude entrar al duelo. Probá de nuevo.'); }
+  go('duelPlay', { id: d.id, d, qs: playerQuestions(d, +variant || 0), idx: 0, ans: [], t0: 0, total: 0, rival: null }, false);
 }
 // Juego: pregunta, cuenta regresiva de 20 que suena, y arriba el marcador tuyo y del rival.
 views.duelPlay = () => {
-  const d = view.d, i = view.idx, q = d.questions[i];
+  const d = view.d, i = view.idx, q = view.qs[i];
   setHeader(`Duelo · ${i + 1} de ${d.questions.length}`);
   const myPts = view.ans.reduce((a, x) => a + (x.pts || 0), 0);
   view.rival = rivalNow();
@@ -1104,7 +1150,7 @@ views.duelPlay = () => {
 async function gradeDuel(d, k, a) {
   try {
     const g = await askJSON('Corregís respuestas de un juego de preguntas de escuela primaria. Sé justo: aceptá sinónimos, faltas de ortografía y respuestas dictadas por voz. "no sé" o vacío es 0.',
-      `Pregunta: ${d.questions[k]}\nRespuesta: ${a.text}\nForma: {"c": nota entera de 0 a 10 (10 = correcta, 5 = a medias, 0 = mal)}`, 120, FAST_MODEL);
+      `Pregunta: ${view.qs ? view.qs[k] : slotQs(d.questions[k])[0]}\nRespuesta: ${a.text}\nForma: {"c": nota entera de 0 a 10 (10 = correcta, 5 = a medias, 0 = mal)}`, 120, FAST_MODEL);
     a.c = Math.max(0, Math.min(10, Math.round(+g.c || 0)));
   } catch { a.c = 0; }
   a.pts = a.c * 10 + (a.c >= 6 ? DUEL_T - a.used : 0);
