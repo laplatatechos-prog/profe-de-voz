@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 48;
+const APP_VERSION = 49;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -142,7 +142,8 @@ function speak(text, btn) {
       if (i % 2) { if (segs[i] === 'p') await new Promise((ok) => setTimeout(ok, 450)); else await playSfx(segs[i].slice(2)); continue; }
       const clean = segs[i].replace(/[*#_`]/g, '').replace(/\p{Extended_Pictographic}|\uFE0F/gu, '').replace(/\s+/g, ' ').trim();
       if (!clean) continue;
-      if (settings.engine === 'piper' && settings.piperVoice) await speakPiper(clean, token);
+      if (settings.engine === 'rafael' && settings.elevenKey) await speakRafael(clean, token);
+      else if (settings.engine === 'piper' && settings.piperVoice) await speakPiper(clean, token);
       else await speakBrowser(clean, token);
     }
     if (token === speakToken) stopSpeaking();
@@ -171,6 +172,57 @@ function speakBrowser(clean, token = speakToken) {
   // En Android, hablar justo después de cancelar a veces se pierde: esperamos un instante.
   setTimeout(next, 150);
   });
+}
+// ---- Voz Rafael (ElevenLabs): el profe argentino. Usa la clave de ElevenLabs guardada solo en este equipo ----
+const RAFAEL_VOICE = 'mh2gj4UAopyeumRhj8xU', RAFAEL_MODEL = 'eleven_multilingual_v2', RAFAEL_CACHE = 'rafael-voz-v1';
+const isBrowserVoice = () => settings.engine !== 'piper' && settings.engine !== 'rafael';
+async function rafaelAudio(text) {
+  // Cada frase se guarda en el teléfono: si se repite, no se gasta crédito de ElevenLabs otra vez.
+  const h = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(RAFAEL_VOICE + '|' + text))))
+    .map((b) => b.toString(16).padStart(2, '0')).join('');
+  const key = new URL(`rafael-cache/${h}.mp3`, location.href).href;
+  let cache = null;
+  try { cache = await caches.open(RAFAEL_CACHE); const hit = await cache.match(key); if (hit) return await hit.blob(); } catch {}
+  let r;
+  try {
+    r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${RAFAEL_VOICE}?output_format=mp3_44100_128`, {
+      method: 'POST', headers: { 'xi-api-key': settings.elevenKey, 'content-type': 'application/json', accept: 'audio/mpeg' },
+      body: JSON.stringify({ text, model_id: RAFAEL_MODEL, voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.3, use_speaker_boost: true } }),
+    });
+  } catch { throw new Error('Sin conexión para la voz de Rafael.'); }
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    const msg = JSON.stringify(d);
+    if (r.status === 401 && !/quota/i.test(msg)) throw new Error('La clave de ElevenLabs no funciona.');
+    if (/quota|credit|limit/i.test(msg)) throw new Error('Rafael se quedó sin crédito de ElevenLabs este mes.');
+    if (/voice_not_found|not found/i.test(msg)) throw new Error('La voz Rafael no está en esa cuenta de ElevenLabs.');
+    throw new Error('Rafael no pudo hablar ahora.');
+  }
+  const blob = await r.blob();
+  try { if (cache) await cache.put(key, new Response(blob, { headers: { 'content-type': 'audio/mpeg' } })); } catch {}
+  return blob;
+}
+async function speakRafael(clean, token) {
+  const parts = chunks(clean);
+  try {
+    if (speakingBtn) speakingBtn.textContent = '… Preparando voz';
+    let next = rafaelAudio(parts[0]);
+    for (let i = 0; i < parts.length; i++) {
+      const blob = await next;
+      if (token !== speakToken) return;
+      if (speakingBtn) speakingBtn.textContent = '■ Parar';
+      if (i + 1 < parts.length) { next = rafaelAudio(parts[i + 1]); next.catch(() => {}); } // prepara la próxima frase mientras suena esta
+      await playBlob(blob);
+      if (token !== speakToken) return;
+    }
+  } catch (e) {
+    console.error(e);
+    if (token !== speakToken) return;
+    toast(e.message + ' Sigo con otra voz.');
+    const rest = parts.join(' ');
+    if (settings.piperVoice && (piperStored || []).includes(settings.piperVoice)) await speakPiper(rest, token);
+    else await speakBrowser(rest, token);
+  }
 }
 // ---- Voces naturales Piper: se descargan una vez y funcionan dentro del navegador, gratis ----
 const PIPER_VOICES = [
@@ -564,7 +616,18 @@ views.settings = () => {
   app.innerHTML = `
     <h2>Voz</h2>
     <div class="card">
-      <label style="margin-top:0">Voces naturales <span class="pill ok">gratis</span></label>
+      <label style="margin-top:0">Voz del profe <span class="pill ok">ElevenLabs</span></label>
+      <div class="voices"><button class="voice-btn ${settings.engine === 'rafael' ? 'on' : ''}" data-rafael="1">
+        <span class="voice-ico">🧉</span>
+        <span class="voice-txt"><b>Rafael · Hombre</b><span>Argentina · el profe ${settings.elevenKey ? '· listo ✓' : '· necesita la clave de ElevenLabs'}</span></span>
+        ${settings.engine === 'rafael' ? '<span class="voice-check">✓</span>' : ''}
+      </button></div>
+      <div id="rafaelKeyBox" style="display:${view.showRafaelKey ? 'block' : 'none'};margin-top:10px">
+        <input id="elevenKey" type="password" placeholder="Pegá acá la clave de ElevenLabs" autocomplete="off" value="${esc(settings.elevenKey || '')}">
+        <div class="row" style="margin-top:8px"><button id="saveEleven">Guardar y probar</button><span id="elevenMsg" class="muted small"></span></div>
+        <p class="muted small">Se guarda solo en este teléfono. Se saca en elevenlabs.io → tu nombre → API Keys → Create.</p>
+      </div>
+      <label>Voces naturales <span class="pill ok">gratis</span></label>
       <div class="voices">${PIPER_VOICES.map((p) => {
         const on = settings.engine === 'piper' && settings.piperVoice === p.id;
         const have = (piperStored || []).includes(p.id);
@@ -577,12 +640,12 @@ views.settings = () => {
         </button>`; }).join('')}</div>
       <label>Voces del teléfono</label>
       ${list.length ? `<div class="voices">${list.map((x, i) => `
-        <button class="voice-btn ${settings.engine !== 'piper' && v && v.voiceURI === x.voiceURI ? 'on' : ''}" data-voice="${esc(x.voiceURI)}">
+        <button class="voice-btn ${isBrowserVoice() && v && v.voiceURI === x.voiceURI ? 'on' : ''}" data-voice="${esc(x.voiceURI)}">
           <span class="voice-ico">${genderOf(x) === 'hombre' ? '👨' : genderOf(x) === 'mujer' ? '👩' : '🗣️'}</span>
           <span class="voice-txt"><b>Voz ${i + 1}${genderOf(x) ? ' · ' + (genderOf(x) === 'hombre' ? 'Hombre' : 'Mujer') : ''}</b><span>${country(x)}${QUALITY.test(x.name) ? ' · ★ natural' : ''}</span></span>
-          ${settings.engine !== 'piper' && v && v.voiceURI === x.voiceURI ? '<span class="voice-check">✓</span>' : ''}
+          ${isBrowserVoice() && v && v.voiceURI === x.voiceURI ? '<span class="voice-check">✓</span>' : ''}
         </button>`).join('')}</div>`
-        : `<div class="voices"><button class="voice-btn ${settings.engine !== 'piper' ? 'on' : ''}" data-voice=""><span class="voice-ico">🗣️</span><span class="voice-txt"><b>Voz del teléfono</b><span>Español</span></span>${settings.engine !== 'piper' ? '<span class="voice-check">✓</span>' : ''}</button></div>`}
+        : `<div class="voices"><button class="voice-btn ${isBrowserVoice() ? 'on' : ''}" data-voice=""><span class="voice-ico">🗣️</span><span class="voice-txt"><b>Voz del teléfono</b><span>Español</span></span>${isBrowserVoice() ? '<span class="voice-check">✓</span>' : ''}</button></div>`}
       <label>Velocidad: <b id="rateVal">${settings.rate.toFixed(2)}x</b></label>
       <div class="row"><span class="muted small">Lenta</span><input class="grow" id="rate" type="range" min="0.6" max="1.8" step="0.05" value="${settings.rate}"><span class="muted small">Rápida</span></div>
       <label class="row" style="gap:10px;color:var(--text)"><input type="checkbox" id="autoRead" style="width:auto" ${settings.autoRead ? 'checked' : ''}> Leer cada tema en voz alta automáticamente</label>
@@ -621,6 +684,22 @@ views.settings = () => {
     settings.voiceURI = b.dataset.voice; settings.engine = 'browser'; save(); render();
     speak('Hola, soy tu profe. Así suena mi voz.');
   });
+  const rb = app.querySelector('[data-rafael]');
+  if (rb) rb.onclick = () => {
+    if (!settings.elevenKey) { view.showRafaelKey = true; $('rafaelKeyBox').style.display = 'block'; $('elevenKey').focus(); return; }
+    settings.engine = 'rafael'; save(); render();
+    speak('Hola, soy Rafael, tu profe. Hoy vamos a aprender algo nuevo, paso a paso y sin apuro.');
+  };
+  if ($('saveEleven')) $('saveEleven').onclick = async () => {
+    const k = $('elevenKey').value.trim();
+    if (k.length < 20) { $('elevenMsg').innerHTML = '<span class="err">Esa clave parece incompleta.</span>'; return; }
+    $('elevenMsg').textContent = 'Probando…';
+    const old = settings.elevenKey; settings.elevenKey = k;
+    try {
+      const blob = await rafaelAudio('Hola, soy Rafael, tu profe. ¡Arrancamos!');
+      settings.engine = 'rafael'; view.showRafaelKey = false; save(); render(); toast('✓ Rafael ya es tu profe.'); playBlob(blob);
+    } catch (e) { settings.elevenKey = old; $('elevenMsg').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  };
   if (!piperStored) piperDownloaded().then(() => { if (view.name === 'settings' && !view.dl) render(); });
   app.querySelectorAll('[data-piper]').forEach((b) => b.onclick = async () => {
     if (view.dl) return;
