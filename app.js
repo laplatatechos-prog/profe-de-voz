@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 47;
+const APP_VERSION = 48;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -1001,6 +1001,7 @@ views.compete = () => {
         <div class="muted small" style="margin-top:10px">¿A quién desafiás? Podés elegir hasta 2 (juegan 3 en total).</div>
         <div class="sug-wrap"><button class="chip ${!rvs().length ? 'on' : ''}" data-rv="">🔗 Por link a cualquiera</button>${(view.players || []).map((pl) => `<button class="chip ${rvs().includes(pl.id) ? 'on' : ''}" data-rv="${pl.id}">👤 ${esc(pl.name)}</button>`).join('')}</div>
         <div class="muted small" style="margin-top:10px"><b>¿Cuál es la consecuencia?</b> Es obligatoria: sin desafío no hay duelo. (Solo de palabra.)</div>
+        <div class="duel-norm">🤝 <b>Regla de oro:</b> la consecuencia nunca puede ser violencia, someter ni humillar a nadie. Eso no está bien. Lo que de verdad importa es la voluntad, el conocimiento y el criterio. Ejemplos buenos: lavar los platos, leer un cuento, enseñarle algo al otro, ordenar la pieza.</div>
         <input id="duelBet" class="ask-input" maxlength="120" style="margin-top:6px" placeholder="Ej: el que pierde lava los platos" required value="${esc(view.bet || '')}">
         <button class="block" id="newDuel" style="margin-top:12px">Crear duelo y desafiar →</button>
         <div id="duelMsg" class="muted small" style="margin-top:8px"></div></div>
@@ -1036,6 +1037,18 @@ views.compete = () => {
       .finally(() => { view.loading = false; if (view.name === 'compete') draw(); });
   }
 };
+// Las consecuencias no pueden ser violencia, sometimiento ni humillación. Primero un filtro rápido y después lo revisa Claude.
+const BAD_BET = /(peg|golpe|cachetad|pi[ñn]a|patad|trompad|escupi|humill|burl|desnud|arrodill|esclav|obedec|sirviente|lam[eé]|pis[aá]r?le|tirar?le|ba[ñn]o.*(fr[ií]a|helad)|agua fr[ií]a|insult|grit[aá]r?le|ridicul|empuj|encerr|quemar|cortar?le|azot|castig)/i;
+async function badBet(bet) {
+  const t = String(bet || '').trim();
+  if (BAD_BET.test(t)) return true;
+  try {
+    const j = await askJSON('Revisás consecuencias (prendas) de un juego de preguntas que usan también chicos. Están PROHIBIDAS las que impliquen violencia física o verbal, sometimiento u obediencia forzada, humillación o vergüenza pública, peligro, maltrato, burlas, o algo que lastime el cuerpo o la dignidad. Están BIEN las tareas útiles o amistosas: lavar los platos, ordenar, leer, enseñar algo, cocinar, invitar algo rico, hacer un dibujo.',
+      `Consecuencia: "${t}"\nForma: {"ok": true o false, "why": "si no está bien, el motivo en 6 palabras o menos"}`, 120, FAST_MODEL);
+    if (j && j.ok === false) return String(j.why || '').trim() || true;
+  } catch {}
+  return false;
+}
 async function createDuel(topicKey, free, targets, targetObjs, bet) {
   const btn = document.getElementById('newDuel'), msg = document.getElementById('duelMsg');
   if (!settings.name) { msg.textContent = 'Primero poné tu nombre en Inicio o en Configuración.'; return; }
@@ -1044,6 +1057,11 @@ async function createDuel(topicKey, free, targets, targetObjs, bet) {
   if (String(bet || '').trim().length < 3) { msg.innerHTML = '<span class="err">Poné la consecuencia: sin desafío no se puede jugar. Ej: el que pierde lava los platos.</span>'; const bi = document.getElementById('duelBet'); if (bi) { bi.focus(); bi.classList.add('need'); } return; }
   btn.disabled = true; msg.textContent = 'Armando las preguntas…';
   try {
+    msg.textContent = 'Revisando la consecuencia…';
+    const why = await badBet(bet);
+    if (why) { btn.disabled = false; const bi = document.getElementById('duelBet'); if (bi) { bi.focus(); bi.classList.add('need'); }
+      msg.innerHTML = `<div class="duel-norm bad">🚫 Esa consecuencia no va${why === true ? '' : ': ' + esc(why)}. Nada de violencia, someter ni humillar a nadie. Lo importante es la voluntad, el conocimiento y el criterio. Probá con otra, por ejemplo: "el que pierde lava los platos".</div>`; return; }
+    msg.textContent = 'Armando las preguntas…';
     const tema = freeT ? freeT : topicKey === 'mezcla' ? 'mezcla de matemática, lengua, ciencias naturales, historia argentina, geografía y cultura general' : duelTopicName(topicKey);
     const j = await askJSON('Sos un maestro de escuela primaria argentina que arma juegos de preguntas.',
       `Armá ${DUEL_N} grupos de preguntas de enseñanza básica (escuela primaria) sobre: ${tema}. Cada grupo tiene 3 preguntas DISTINTAS entre sí (con respuestas distintas) pero del MISMO subtema y la MISMA dificultad, para que cada jugador reciba una diferente y el duelo sea justo. ` +
@@ -1075,7 +1093,7 @@ views.duel = () => {
     app.innerHTML = `
       <div class="card ask-card"><div class="ask-q">⚔️ ${esc(d.topic)}</div>
         <div class="muted small">Desafío de ${esc(d.mine ? 'vos' : d.creator_name)}${d.target_name ? ` para ${esc(d.for_me ? 'vos' : d.target_name)}` : ''} · ${d.questions.length} preguntas · ${DUEL_T} s cada una</div></div>
-      ${d.bet ? `<div class="card duel-bet">🎲 <b>Se apuesta:</b> ${esc(d.bet)}${allDone && !(rs.length > 1 && rs[1].points === top.points && rs[1].seconds === top.seconds) ? `<div style="margin-top:4px">👉 ${esc(rs[rs.length - 1].me ? 'Te toca cumplir a vos' : 'Le toca cumplir a ' + rs[rs.length - 1].name)}.</div>` : ''}</div>` : ''}
+      ${d.bet ? `<div class="card duel-bet">🎲 <b>Consecuencia:</b> ${esc(d.bet)}<div class="duel-norm" style="margin-top:6px">🤝 Nunca violencia, someter ni humillar: lo importante es la voluntad, el conocimiento y el criterio.</div>${allDone && !(rs.length > 1 && rs[1].points === top.points && rs[1].seconds === top.seconds) ? `<div style="margin-top:4px">👉 ${esc(rs[rs.length - 1].me ? 'Te toca cumplir a vos' : 'Le toca cumplir a ' + rs[rs.length - 1].name)}.</div>` : ''}</div>` : ''}
       ${verdict ? `<div class="duel-verdict">${verdict}</div>` : ''}
       <div class="duel-board">${rs.length ? rs.map((r, i) => `<div class="duel-score ${r.me ? 'me' : ''} ${allDone ? 'final' : ''}"><span class="duel-pos">${i + 1}</span>${allDone ? `<span class="duel-char"><span class="anim-loop ${animOf(duelChar(d, r, rs).sound)}">${duelChar(d, r, rs).emoji}</span></span>` : ''}<b class="grow">${esc(r.me ? 'Vos' : r.name)}${allDone ? `<span class="duel-sos">${esc(duelChar(d, r, rs).sos)} · nota ${fmt(r.avg || 0)}</span><span class="duel-joke">${esc(duelChar(d, r, rs).joke)}</span>` : ''}</b>
         <span class="muted small">${r.done ? secs(r.seconds) : `jugando ${r.cum.length}/${d.questions.length}`}</span><span class="duel-pts">${r.points}</span></div>`).join('') : '<p class="muted">Nadie jugó todavía.</p>'}</div>
