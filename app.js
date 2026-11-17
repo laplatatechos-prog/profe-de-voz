@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 49;
+const APP_VERSION = 50;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -920,7 +920,8 @@ Siempre respondés SOLO con JSON válido, sin texto extra:
 - Si el alumno responde la pregunta: {"kind":"answer","correct":1-10,"clarity":1-10,"feedback":"una o dos frases cortas, claras y cálidas, SIN chistes ni ironía (la app ya hizo el chiste): si estuvo bien o qué faltó; si estuvo mal o incompleta, decí la respuesta correcta con un ejemplo corto","explain":"siguiente idea + ejemplo cotidiano (vacío si ya fue el último paso)","question":"siguiente pregunta (vacío si ya fue el último paso)"}
   Cuando el alumno responde, el feedback, la siguiente idea y la pregunta van SIN chistes, ironías ni bromas: claros y directos.
   "correct" = qué tan correcta es la respuesta. "clarity" = qué tan clara y precisa la explicó.
-- Si el alumno NO responde sino que pregunta algo o pide más detalle: {"kind":"doubt","reply":"respondé su duda con un ejemplo concreto y cotidiano, acá sí podés extenderte un poco (máximo 80 palabras)","question":"repetí la pregunta pendiente"}`;
+- Si el alumno NO responde sino que pregunta algo o pide más detalle: {"kind":"doubt","reply":"respondé su duda con un ejemplo concreto y cotidiano, acá sí podés extenderte un poco (máximo 80 palabras)","question":"repetí la pregunta pendiente"}
+En CUALQUIER respuesta podés sumar "img":"título exacto de un artículo de Wikipedia en español" cuando una foto ayude a entender o el alumno se interese por algo concreto (un animal, un lugar, una persona famosa, un objeto, una obra). Siempre ponelo si el alumno pide ver algo o pregunta cómo es algo. Solo cosas aptas para chicos; si no hace falta, no lo pongas. Si lo ponés, no digas que no podés mostrar imágenes: la app ofrece la foto.`;
 }
 views.module = () => {
   const s = getSubj(); const st = s.stages[view.si]; const m = st.modules[view.mi];
@@ -941,19 +942,39 @@ views.module = () => {
   send.onclick = () => { const t = ans.value.trim(); if (!t) return; ans.value = ''; clearCountdown(); learnTurn(s, st, m, t); };
   if (!view.turns.length) learnTurn(s, st, m, null);
 };
+// Fotos gratis de Wikipedia en español (sin claves). Muestra la imagen principal del artículo con un resumen corto.
+async function wikiPic(q) {
+  const get = async (u) => { const r = await fetch(u); return r.ok ? r.json() : null; };
+  try {
+    let j = await get('https://es.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(q.replace(/ /g, '_')));
+    if (!j || !(j.thumbnail || j.originalimage) || j.type === 'disambiguation') {
+      const sr = await get('https://es.wikipedia.org/w/api.php?action=query&list=search&format=json&origin=*&srlimit=1&srsearch=' + encodeURIComponent(q));
+      const t = sr && sr.query && sr.query.search[0] && sr.query.search[0].title; if (!t) return null;
+      j = await get('https://es.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(t.replace(/ /g, '_')));
+    }
+    const img = j && (j.thumbnail || j.originalimage); if (!img) return null;
+    return { src: img.source, title: j.title, text: (j.extract || '').split('. ').slice(0, 2).join('. ').slice(0, 220), url: j.content_urls && j.content_urls.mobile ? j.content_urls.mobile.page : '' };
+  } catch { return null; }
+}
+const picHtml = (p) => `<figure class="wiki-pic"><img src="${esc(p.src)}" alt="${esc(p.title)}" loading="lazy"><figcaption><b>${esc(p.title)}</b>${p.text ? ' · ' + esc(p.text) : ''}${p.url ? ` <a href="${esc(p.url)}" target="_blank" rel="noopener">Ver más</a>` : ''}</figcaption></figure>`;
 function drawTurns() {
   const chat = document.getElementById('chat'); if (!chat) return;
   chat.innerHTML = view.turns.map((t, i) => t.role === 'me'
     ? `<div class="msg me">${esc(t.text)}</div>`
-    : `<div class="msg ai">${t.score != null ? `<div class="mini-score ${t.score >= PASS ? 'ok' : 'bad'}"><span class="mini-emo ${t.lv ? animOf(t.lv.sound) : ''}">${t.lv ? t.lv.emoji : levelOf(t.score)[2]}</span> ${fmt(t.score)} · ${esc(t.lv ? t.lv.sos : levelOf(t.score)[3])}</div>${t.joke ? `<div class="joke">${esc(t.joke)}</div>` : ''}${t.gossip ? `<div class="gossip">🗣️ ${esc(t.gossip)}</div>` : ''}` : ''}${t.feedback ? `<div class="fb">${esc(t.feedback)}</div>` : ''}${t.explain ? `<div>${esc(t.explain)}</div>` : ''}${t.question ? `<div class="q">❓ ${esc(t.question)}</div>` : ''}
+    : `<div class="msg ai">${t.score != null ? `<div class="mini-score ${t.score >= PASS ? 'ok' : 'bad'}"><span class="mini-emo ${t.lv ? animOf(t.lv.sound) : ''}">${t.lv ? t.lv.emoji : levelOf(t.score)[2]}</span> ${fmt(t.score)} · ${esc(t.lv ? t.lv.sos : levelOf(t.score)[3])}</div>${t.joke ? `<div class="joke">${esc(t.joke)}</div>` : ''}${t.gossip ? `<div class="gossip">🗣️ ${esc(t.gossip)}</div>` : ''}` : ''}${t.feedback ? `<div class="fb">${esc(t.feedback)}</div>` : ''}${t.explain ? `<div>${esc(t.explain)}</div>` : ''}${t.pic ? picHtml(t.pic) : t.img ? `<button class="chip pic-btn" data-pic="${i}">📷 ¿Querés que te muestre una foto de ${esc(t.img)}?</button>` : ''}${t.question ? `<div class="q">❓ ${esc(t.question)}</div>` : ''}
         <button class="plain small say" data-say="${i}">🔊</button></div>`).join('');
+  chat.querySelectorAll('[data-pic]').forEach((b) => b.onclick = async () => {
+    const t = view.turns[+b.dataset.pic]; b.disabled = true; b.textContent = '🔎 Buscando en internet…';
+    const p = await wikiPic(t.img); if (!p) { b.textContent = 'No encontré una foto, perdón 😅'; return; }
+    t.pic = p; const y = window.scrollY; drawTurns(); window.scrollTo(0, y);
+  });
   chat.querySelectorAll('[data-say]').forEach((b) => b.onclick = () => speak(turnText(view.turns[+b.dataset.say])));
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
 const scoreLine = (n, lv, withName) => `${withName && settings.name ? settings.name + ', sacaste' : 'Sacaste'} ${fmt(n)}. ${lv ? lv.sos : levelOf(n)[3]}.${lv && lv.sound ? ` {{s:${lv.sound}}}` : ''}`;
 // Pausa dramática antes del remate del chiste.
 const dramatic = (j) => { if (!j) return ''; const s = j.match(/[^.!?…]+[.!?…]+["”]?\s*/g) || [j]; return s.length < 2 ? j : s.slice(0, -1).join('') + ' {{p}} ' + s[s.length - 1]; };
-const turnText = (t) => [t.score != null ? scoreLine(t.score, t.lv) : '', dramatic(t.joke), t.gossip, t.feedback, t.explain, t.question].filter(Boolean).join(' ');
+const turnText = (t) => [t.score != null ? scoreLine(t.score, t.lv) : '', dramatic(t.joke), t.gossip, t.feedback, t.explain, t.img && !t.pic ? `Si querés, te busco en internet una foto de ${t.img}.` : '', t.question].filter(Boolean).join(' ');
 async function learnTurn(s, st, m, text) {
   const keep = view;
   if (view.busy) return; // evita que se pida dos veces lo mismo
@@ -987,6 +1008,9 @@ async function learnTurn(s, st, m, text) {
       const lv = pickLevel(score);
       turn = { role: 'ai', score, lv, joke: lv.joke, gossip: '', feedback: j.feedback, explain: j.explain, question: j.question };
     }
+    if (j.img && typeof j.img === 'string') turn.img = j.img.trim().slice(0, 80);
+    const aside = rivalAside(s.topic);
+    if (aside) { if (turn.feedback) turn.feedback += ' ' + aside; else if (turn.explain) turn.explain += ' ' + aside; }
     view.turns.push(turn);
     render();
     const spoken = settings.autoRead ? speak(turnText(turn)) : null;
@@ -1939,13 +1963,39 @@ function gossipNow() {
   const mine = rows.find((r) => r.me && r.topic === tp && r.avg != null);
   const prevAvg = before && before.split('|')[0] !== '-' ? +before.split('|')[0] : null;
   let fact;
-  if (a == null) fact = pickOne([`${n} empezó a estudiar ${tp}. Todavía no rindió nada. Se hace el misterioso.`, `${n} arrancó con ${tp}. Viene con todo, o eso dice.`]);
+  if (a == null) fact = `${n} empezó ${tp} y ${rotPick('behind', BEHIND)}.`;
   else if (prevAvg != null && o.avg > prevAvg) fact = `${n} subió en ${tp}. Ahora tiene ${a} y está en el ${L}. Se está poniendo las pilas.`;
-  else if (prevAvg != null && o.avg < prevAvg) fact = `${n} bajó un poquito en ${tp}. Ahora tiene ${a}, en el ${L}. Pobre, pasale un mate.`;
-  else if (mine && o.avg > mine.avg) fact = `${n} ya está en el ${L} en ${tp}, con ${a}. Y vos ahí, en el ${mine.level}…`;
-  else if (mine && o.avg < mine.avg) fact = `en ${tp} le estás ganando a ${n}, que está en el ${L} con ${a}. Hacete el humilde.`;
-  else fact = pickOne([`${n} está estudiando ${tp} y ya sacó ${a}. Está en el ${L}.`, `${n} anda con ${tp}. Sacó ${a} y quedó en el ${L}. Ya se la cree, ¿viste?`]);
-  return `${rotPick('open', GOSSIP_OPEN)} ${fact} ${rotPick('close', GOSSIP_CLOSE)}`;
+  else if (prevAvg != null && o.avg < prevAvg) fact = `${n} bajó un poquito en ${tp}: ahora tiene ${a}. Ya va a repuntar, como vos.`;
+  else if (mine && o.avg > mine.avg) fact = `${n} va más arriba en ${tp}, con ${a}: es ${rotPick('hype', HYPE)}. ${rotPick('cheer', CHEER)}`;
+  else if (mine && o.avg < mine.avg) fact = `en ${tp} vas arriba de ${n}, que tiene ${a}. Hacete el humilde, que se está entrenando.`;
+  else fact = pickOne([`${n} está estudiando ${tp} y ya sacó ${a}. ${L ? 'Está en el ' + L + '.' : '¡Bien ahí!'}`, `${n} anda con ${tp}. Sacó ${a} ${L ? 'y quedó en el ' + L : 'y anda bárbaro'}. ${rotPick('cheer', CHEER)}`]);
+  const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
+  return Math.random() < 0.5 ? cap(fact) : `${rotPick('open', GOSSIP_OPEN)} ${fact}${Math.random() < 0.5 ? ' ' + rotPick('close', GOSSIP_CLOSE) : ''}`; // a veces directo, a veces con secreto
+}
+// Comentarios sueltos sobre otros jugadores: salen al azar mientras el profe explica o corrige, metidos en la charla (sin cuadro aparte).
+// Competencia sana: en buena onda, para picar, nunca para presionar ni hacer sentir mal.
+const HYPE = ['un ninja', 'un ser supremo de luz', 'Galactus con mochila', 'Thanos, y le falta una sola gema', 'un Jedi de la tabla del nueve', 'el jefe final del aula',
+  'un speedrunner del saber', 'un Pokémon legendario', 'Goku en modo estudio', 'un mago nivel 99', 'el que hace los memes del grupo', 'un cohete con anteojos'];
+const BEHIND = ['ni arrancó: sigue en la puerta del primer módulo, calentando la silla', 'todavía no rindió nada: está cargando… 1 %… 2 %…',
+  'está en el primer módulo hace rato: dice que es estrategia', 'abrió el tema y se fue a buscar un mate. Hace tres días'];
+const CHEER = ['¿Te animás a alcanzarlo?', '¡Dale que se puede!', 'Vos tranqui, que vas a tu ritmo y vas bien.', 'Competencia sana, eh: mañana capaz que el ninja sos vos.',
+  'Ahí tenés una motivación.', 'Ponete las pilas y lo pasás.'];
+let lastAside = 0;
+function rivalAside(topicHint) {
+  rankingRows().catch(() => {});
+  const rows = rankCache; if (!rows) return '';
+  if (Date.now() - lastAside < 3 * 60 * 1000 || Math.random() > 0.3) return '';
+  const others = rows.filter((r) => !r.me && r.name); if (!others.length) return '';
+  const near = others.filter((r) => topicHint && String(r.topic).toLowerCase() === String(topicHint).toLowerCase());
+  const o = pickOne(near.length && Math.random() < 0.6 ? near : others);
+  const mine = rows.find((r) => r.me && r.topic === o.topic && r.avg != null);
+  const n = o.name, tp = o.topic;
+  let t;
+  if (o.avg == null) t = `Por cierto, ${n} empezó ${tp} y ${rotPick('behind', BEHIND)}. Vos ya le sacaste ventaja.`;
+  else if (!mine || o.avg > mine.avg) t = `${rotPick('lead', ['Ojo que', 'Mirá que', 'Che, dato:', 'Te cuento que', 'Agarrate:', 'No sé si sabías que'])} ${n} va más arriba en ${tp}, con ${fmt(o.avg)}: es ${rotPick('hype', HYPE)}. ${rotPick('cheer', CHEER)}`;
+  else t = `Dato: en ${tp} vas arriba de ${n}, que tiene ${fmt(o.avg)}. Pero se está entrenando como ${rotPick('hype', HYPE)}, así que no te duermas.`;
+  lastAside = Date.now();
+  return t;
 }
 // Distintas formas de arrancar y cerrar la confidencia; rotan sin repetirse hasta usarlas todas.
 const GOSSIP_OPEN = [
@@ -2050,8 +2100,7 @@ views.result = () => {
         <div class="result-num">${fmt(view.score)}</div>
         <div class="result-level">${esc(view.lv.sos)}</div>
         <div class="result-joke">${esc(view.joke)}</div>
-        ${view.gossip ? `<div class="result-gossip">🗣️ ${esc(view.gossip)}</div>` : ''}
-        ${view.feedback ? `<div class="result-joke" style="font-style:normal">${esc(view.feedback)}</div>` : ""}
+        ${view.feedback || view.gossip ? `<div class="result-joke" style="font-style:normal">${esc([view.feedback, view.gossip].filter(Boolean).join(' '))}</div>` : ""}
         <div class="result-msg">${msg}</div>
         <div class="result-sub"><span>Corrección <b>${fmt(view.correct)}</b></span><span>Claridad <b>${fmt(view.clarity)}</b></span></div>
         ${justDone ? '<button class="block result-btn" id="toFinal">🎓 Rendir el examen final →</button>' : ''}
