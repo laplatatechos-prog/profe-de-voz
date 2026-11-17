@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 44;
+const APP_VERSION = 45;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -94,6 +94,7 @@ const lengthRule = (short = settings.length === 'corto') => short
 const TEACHER_BASE = 'Sos un profesor claro y paciente que enseña a una persona de Argentina. Hablale de vos, en español rioplatense. ' +
   'Tenés mucha personalidad: sos expresivo, irónico y gracioso, con sarcasmo cariñoso bien argentino y exageraciones ("¡Pará, pará! ¿Me estás cargando? ¡Eso estuvo bárbaro!", "Mirá vos, casi casi… como el colectivo que se te escapa por un metro"). ' +
   'Usá exclamaciones, preguntas retóricas y comparaciones de la vida cotidiana argentina (el mate, el colectivo, la abuela, el asado, el fútbol). Nunca ofendas ni humilles: la ironía siempre es con cariño y para motivar. La claridad de la explicación es lo primero. ' +
+  'ENFOQUE: enseñá la LÓGICA del tema, no su historia. Cómo funciona, cómo se piensa, sus conceptos, problemas, criterios y cómo se aplica, usando a los referentes más importantes como ejemplos de ideas (no como biografías ni fechas). Ejemplo: en filosofía, las grandes preguntas y cómo se razonan, no la historia de la filosofía; en arte, composición, color, luz, criterios para mirar y hacer una obra, no historia del arte. Solo enseñá historia si el tema es explícitamente historia. ' +
   'Tus textos también se leen en voz alta: no uses markdown, asteriscos, numerales, viñetas, tablas ni emojis.';
 const teacher = () => TEACHER_BASE + ' No uses el nombre del alumno: hablale directo, sin nombrarlo (la app lo nombra sola al final del examen).';
 
@@ -710,7 +711,7 @@ async function createSubject(topic) {
     const j = await askJSON(
       'Sos un profesor experto que arma planes de estudio para un adulto hispanohablante que estudia desde el celular. ' +
       'Forma: {"topic":"nombre corto","emoji":"un emoji que represente el tema","description":"una frase","stages":[{"title":"...","summary":"una frase","modules":[{"title":"título corto y concreto"}]}]}. ' +
-      'De lo básico a lo avanzado. ' + diffOf(null).plan + ' Cada etapa con 3 a 5 módulos MUY cortos (cada uno se lee en 1 o 2 minutos).',
+      'De lo básico a lo avanzado. Armá el plan sobre la LÓGICA del tema (cómo funciona, conceptos, problemas, criterios y práctica, con los referentes principales como ejemplos), NO sobre su historia ni su cronología, salvo que el tema sea explícitamente historia. ' + diffOf(null).plan + ' Cada etapa con 3 a 5 módulos MUY cortos (cada uno se lee en 1 o 2 minutos).',
       'Quiero aprender: ' + topic, 3000);
     const s = {
       id: Date.now().toString(36), diff: settings.diff || 'medio', topic: j.topic || topic, emoji: j.emoji || '📘', description: j.description || '', current: 0,
@@ -959,24 +960,28 @@ views.compete = () => {
         ${view.dt === 'libre' ? `<input id="freeTopic" class="ask-input" style="margin-top:8px" placeholder="Escribí el tema. Ej: los planetas, fútbol, animales" value="${esc(view.free || '')}">` : ''}
         <div class="muted small" style="margin-top:10px">¿A quién desafiás?</div>
         <div class="sug-wrap"><button class="chip ${!view.rv ? 'on' : ''}" data-rv="">🔗 Por link a cualquiera</button>${(view.players || []).map((pl) => `<button class="chip ${view.rv === pl.id ? 'on' : ''}" data-rv="${pl.id}">👤 ${esc(pl.name)}</button>`).join('')}</div>
+        <div class="muted small" style="margin-top:10px">¿Qué se apuesta? (opcional, solo de palabra)</div>
+        <input id="duelBet" class="ask-input" maxlength="120" style="margin-top:6px" placeholder="Ej: el que pierde lava los platos" value="${esc(view.bet || '')}">
         <button class="block" id="newDuel" style="margin-top:12px">Crear duelo y desafiar →</button>
         <div id="duelMsg" class="muted small" style="margin-top:8px"></div></div>
       <button class="block soft" id="toChat" style="margin-top:4px">💬 Charla con todos</button>
       <h2>Mis duelos</h2>
       ${view.loading ? '<p class="muted">Cargando…</p>' : view.err ? `<p class="muted">${esc(view.err)}</p>` : ds.length ? ds.map((d) => {
         const me = d.results.find((r) => r.me), others = d.results.filter((r) => !r.me);
-        return `<div class="card tap duel-row ${pend(d) ? 'duel-new' : ''}" data-duel="${d.id}">${pend(d) ? `<div class="duel-badge">⚔️ ¡${esc(d.creator_name)} te desafió!</div>` : ''}<div class="between"><b>${esc(d.topic)}</b><span class="muted small">${new Date(d.created_at).toLocaleDateString('es-AR')}</span></div>
+        return `<div class="card tap duel-row ${pend(d) ? 'duel-new' : ''}" data-duel="${d.id}">${pend(d) ? `<div class="duel-badge">⚔️ ¡${esc(d.creator_name)} te desafió!</div>` : ''}<div class="between"><b>${esc(d.topic)}</b><span class="muted small">${new Date(d.created_at).toLocaleDateString('es-AR')}</span></div>${d.bet ? `<div class="small">🎲 Se apuesta: ${esc(d.bet)}</div>` : ''}
           <div class="small" style="margin-top:6px">${d.results.length ? d.results.map((r, i) => `${i === 0 && r.done && d.results.length > 1 ? '🏆 ' : ''}${esc(r.me ? 'Vos' : r.name)}: <b>${r.points}</b>${r.done ? '' : ' (jugando)'}`).join(' · ') : 'Nadie jugó todavía'}</div>
+          ${d.declined && d.mine ? `<div class="small duel-declined">🙅 ${esc(d.target_name || 'Tu rival')} rechazó el desafío</div>` : ''}
           ${!me || !me.done ? '<div class="small" style="margin-top:4px;color:var(--accent);font-weight:700">Te toca jugar →</div>' : !others.length ? `<div class="muted small" style="margin-top:4px">${d.target_name && d.mine ? `Esperando a ${esc(d.target_name)}…` : 'Esperando rival. Compartí el link.'}</div>` : ''}</div>`;
       }).join('') : '<p class="muted">Todavía no tenés duelos. ¡Creá uno y mandale el link a alguien!</p>'}
       <button class="block soft" id="toRank2" style="margin-top:12px">🏆 Ver el ranking</button>`;
     app.querySelectorAll('[data-dt]').forEach((el) => el.onclick = () => { view.dt = el.dataset.dt; draw(); const f = document.getElementById('freeTopic'); if (f) f.focus(); });
     app.querySelectorAll('[data-rv]').forEach((el) => el.onclick = () => { view.rv = el.dataset.rv || null; draw(); });
     const ft = document.getElementById('freeTopic'); if (ft) ft.oninput = () => { view.free = ft.value; };
+    const bt = document.getElementById('duelBet'); bt.oninput = () => { view.bet = bt.value; };
     document.getElementById('toChat').onclick = () => go('chat', { room: 'general' });
     app.querySelectorAll('[data-duel]').forEach((el) => el.onclick = () => go('duel', { id: el.dataset.duel }));
     document.getElementById('toRank2').onclick = () => go('ranking');
-    document.getElementById('newDuel').onclick = () => createDuel(view.dt || 'mezcla', view.free, view.rv, (view.players || []).find((x) => x.id === view.rv));
+    document.getElementById('newDuel').onclick = () => createDuel(view.dt || 'mezcla', view.free, view.rv, (view.players || []).find((x) => x.id === view.rv), view.bet);
   };
   draw();
   if (!view.players) { view.players = []; sbRpc('duel_players', { p_player: settings.playerId }).then((x) => { view.players = x || []; if (view.name === 'compete') draw(); }).catch(() => {}); }
@@ -986,7 +991,7 @@ views.compete = () => {
       .finally(() => { view.loading = false; if (view.name === 'compete') draw(); });
   }
 };
-async function createDuel(topicKey, free, target, targetObj) {
+async function createDuel(topicKey, free, target, targetObj, bet) {
   const btn = document.getElementById('newDuel'), msg = document.getElementById('duelMsg');
   if (!settings.name) { msg.textContent = 'Primero poné tu nombre en Inicio o en Configuración.'; return; }
   const freeT = topicKey === 'libre' ? String(free || '').trim().slice(0, 60) : '';
@@ -1002,6 +1007,7 @@ async function createDuel(topicKey, free, target, targetObj) {
     if (qs.length < 3) throw new Error('No pude armar las preguntas. Probá de nuevo.');
     const id = await sbRpc('create_duel2', { p_player: settings.playerId, p_name: settings.name, p_topic: freeT || duelTopicName(topicKey), p_diff: 'basico', p_questions: qs, p_target: target || null });
     if (!id) throw new Error('No pude crear el duelo. Probá de nuevo.');
+    if (bet && bet.trim()) await sbRpc('set_duel_bet', { p_id: id, p_player: settings.playerId, p_bet: bet.trim() }).catch(() => {});
     if (targetObj) toast(`Listo: ${targetObj.name} va a ver el desafío cuando abra Competencia.`);
     go('duel', { id, fresh: true });
   } catch (e) { btn.disabled = false; msg.innerHTML = `<span class="err">${esc(e.message)}</span>`; }
@@ -1023,10 +1029,13 @@ views.duel = () => {
     app.innerHTML = `
       <div class="card ask-card"><div class="ask-q">⚔️ ${esc(d.topic)}</div>
         <div class="muted small">Desafío de ${esc(d.mine ? 'vos' : d.creator_name)}${d.target_name ? ` para ${esc(d.for_me ? 'vos' : d.target_name)}` : ''} · ${d.questions.length} preguntas · ${DUEL_T} s cada una</div></div>
+      ${d.bet ? `<div class="card duel-bet">🎲 <b>Se apuesta:</b> ${esc(d.bet)}${allDone && !(rs.length > 1 && rs[1].points === top.points && rs[1].seconds === top.seconds) ? `<div style="margin-top:4px">👉 ${esc(rs[rs.length - 1].me ? 'Te toca cumplir a vos' : 'Le toca cumplir a ' + rs[rs.length - 1].name)}.</div>` : ''}</div>` : ''}
       ${verdict ? `<div class="duel-verdict">${verdict}</div>` : ''}
       <div class="duel-board">${rs.length ? rs.map((r, i) => `<div class="duel-score ${r.me ? 'me' : ''} ${allDone ? 'final' : ''}"><span class="duel-pos">${i + 1}</span>${allDone ? `<span class="duel-char"><span class="anim-loop ${animOf(duelChar(d, r, rs).sound)}">${duelChar(d, r, rs).emoji}</span></span>` : ''}<b class="grow">${esc(r.me ? 'Vos' : r.name)}${allDone ? `<span class="duel-sos">${esc(duelChar(d, r, rs).sos)} · nota ${fmt(r.avg || 0)}</span><span class="duel-joke">${esc(duelChar(d, r, rs).joke)}</span>` : ''}</b>
         <span class="muted small">${r.done ? secs(r.seconds) : `jugando ${r.cum.length}/${d.questions.length}`}</span><span class="duel-pts">${r.points}</span></div>`).join('') : '<p class="muted">Nadie jugó todavía.</p>'}</div>
+      ${d.declined ? `<div class="card duel-declined" style="text-align:center">🙅 ${esc(d.for_me ? 'Rechazaste' : (d.target_name || 'Tu rival') + ' rechazó')} este desafío.</div>` : ''}
       ${!me || !me.done ? `<button class="block" id="playDuel" style="margin-top:12px">${me ? 'Seguir jugando' : '¡Jugar ahora!'} →</button>` : ''}
+      ${d.for_me && !me && !d.declined ? '<button class="block ghost-red" id="declineDuel" style="margin-top:8px">🙅 Rechazar el reto</button>' : ''}
       <button class="block ${me && me.done ? '' : 'soft'}" id="shareDuel" style="margin-top:8px">📤 Desafiar a alguien con este duelo</button>
       <button class="block soft" id="duelChat" style="margin-top:8px">💬 Chat del duelo</button>
       <button class="block soft" id="toComp" style="margin-top:8px">⚔️ Volver a Competencia</button>`;
@@ -1036,6 +1045,13 @@ views.duel = () => {
     const pd = document.getElementById('playDuel');
     if (pd) pd.onclick = () => { if (me) toast('Ya habías empezado este duelo: cada uno juega una sola vez, así que queda con lo que tenías.'); startDuelPlay(d, me); };
     document.getElementById('shareDuel').onclick = () => shareDuel(d);
+    const dd = document.getElementById('declineDuel');
+    if (dd) dd.onclick = async () => {
+      if (!confirm(`¿Rechazar el reto de ${d.creator_name}?`)) return;
+      dd.disabled = true;
+      try { await sbRpc('decline_duel', { p_id: d.id, p_player: settings.playerId }); toast(`Listo, rechazaste el reto. ${d.creator_name} se va a enterar.`); window.__chkDuels = 0; window.__pendDuels = 0; stack.length = 0; view = { name: 'home' }; go('compete'); }
+      catch { dd.disabled = false; toast('No se pudo rechazar. Probá de nuevo.'); }
+    };
     document.getElementById('toComp').onclick = () => { stack.length = 0; view = { name: 'home' }; go('compete'); };
   };
   const load = () => sbRpc('get_duel', { p_id: view.id, p_player: settings.playerId })
@@ -1094,7 +1110,9 @@ function announceDuel(d, rs) {
     for (let k = 0; k < n; k++) js.push(joke(r, LOSER_JOKES));
     return `{{s:sadtrombone}} ${base} ${dramatic(duelChar(d, r, rs).joke)} {{p}} ${js.join(' {{p}} ')}${huge ? ' {{p}} ¡Qué paliza!' : ''}`;
   }).join(' {{p}} ');
-  speak(`{{s:fanfare}} ${head} {{p}} ${lines}`);
+  const last = rs[rs.length - 1];
+  const betLine = d.bet && !tie ? ` {{p}} Y acordate de la apuesta: ${d.bet}. ${last.me ? 'Te toca cumplir a vos.' : `Le toca cumplir a ${last.name}.`}` : '';
+  speak(`{{s:fanfare}} ${head} {{p}} ${lines}${betLine}`);
   if (top.me || tie) confetti();
 }
 // Cada jugador recibe su variante de cada pregunta (misma dificultad, distinta pregunta) y en su propio orden.
