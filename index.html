@@ -214,6 +214,22 @@
 .countdown b.beat{animation:cdBeat .35s}
 @keyframes cdBeat{0%{transform:scale(1.35)}100%{transform:scale(1)}}
 
+.fight-cta{background:linear-gradient(90deg,#ff7a59,#ffb84d)}
+.fight-top{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.fight-bar{flex:1;min-width:0}.fight-bar b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fight-bar.r{text-align:right}
+.fight-bar i{display:block;height:12px;background:#ffd6dc;border-radius:8px;overflow:hidden}.fight-bar i span{display:block;height:100%;background:linear-gradient(90deg,#2ecc71,#a3e635);transition:width .2s}
+.fight-bar.r i span,.fight-bar.r em span{margin-left:auto}
+.fight-bar em{display:block;height:6px;margin-top:3px;background:#eee;border-radius:6px;overflow:hidden}.fight-bar em span{display:block;height:100%;background:#ffc93c;transition:width .2s}
+.fight-vs{font-weight:900;font-size:20px;color:var(--accent);min-width:34px;text-align:center}
+.fight-cv{width:100%;height:auto;border-radius:16px;border:3px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,.08);touch-action:none;display:block}
+.fight-msg{min-height:26px;text-align:center;font-weight:800;font-size:17px;margin:6px 0}.fight-msg.pop{animation:bounceIn .4s}
+.fight-pad{display:flex;justify-content:space-between;align-items:center;gap:10px;user-select:none;-webkit-user-select:none;touch-action:none}
+.fight-left,.fight-right{display:flex;gap:10px}
+.fbtn{width:78px;height:78px;border-radius:50%;font-size:30px;padding:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1;touch-action:none}
+.fbtn span{font-size:11px;margin-top:3px}.fbtn.dir{width:72px;height:72px;border-radius:18px;background:#6c5ce7}.fbtn.jump{background:#00b894}.fbtn.hit{background:#ff5d73}
+.fbtn.on{transform:scale(.92);filter:brightness(1.15)}.fbtn.hit.super{background:linear-gradient(135deg,#ffd93d,#ff9f43);animation:bounceIn .6s infinite alternate}
+.fight-quiz{position:relative;margin:-150px auto 0;width:88%;background:#fff;border-radius:18px;padding:14px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.2);z-index:5;animation:bounceIn .35s}
+.fight-quiz b{display:block;font-size:30px;margin:6px 0 10px}.fight-quiz button{min-width:64px;font-size:20px}
 .gossip{margin:8px 0;padding:8px 12px;border-radius:12px;background:#fff4d6;color:#6b4e00;font-size:15px}
 .req-banner{margin-bottom:12px;background:linear-gradient(90deg,#ff9f43,#ff5d73);animation:bounceIn .5s}
 .pic-btn{margin:8px 0;display:inline-block}
@@ -287,5 +303,6 @@ button.ghost-red{background:#fff;color:#c0392b;border:2px solid #f3c2bd}
 <main id="app"></main>
 <button id="stopFab" aria-label="Parar la voz">■ Parar voz</button>
 <script src="app.js"></script>
+<script src="fight.js"></script>
 </body>
 </html>

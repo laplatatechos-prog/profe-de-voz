@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 53;
+const APP_VERSION = 54;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -786,6 +786,7 @@ views.home = () => {
     </div>
     <div class="row share-row">${SB_URL ? '<button class="grow rank-cta" id="toRank">⚔️ Competencia</button>' : ''}<button class="grow share-cta" id="shareBtn">📤 Compartir la app</button></div>
     <button class="block soft" id="toChars" style="margin-top:8px">🐾 Ver todos los personajes</button>
+    <button class="block fight-cta" id="toFight" style="margin-top:8px">🥊 Combate de personajes</button>
     <h2>Mis áreas</h2>
     ${items || '<p class="muted">Todavía no agregaste ninguna.</p>'}`;
   const ng = document.getElementById('nameGo');
@@ -807,6 +808,7 @@ views.home = () => {
     sbRpc('my_duels', { p_player: settings.playerId }).then((ds) => { window.__pendDuels = (ds || []).filter((d) => d.for_me && !d.results.some((r) => r.me && r.done)).length; const b = document.getElementById('toRank'); if (b && window.__pendDuels) b.dataset.badge = window.__pendDuels; }).catch(() => {}); }
   if (tr && window.__pendDuels) tr.dataset.badge = window.__pendDuels;
   document.getElementById('toChars').onclick = () => go('characters');
+  document.getElementById('toFight').onclick = () => go('fightSelect');
   document.getElementById('shareBtn').onclick = () => shareApp();
   const ts = document.getElementById('toSettings'); if (ts) ts.onclick = (e) => { e.preventDefault(); go('settings'); };
   app.querySelectorAll('[data-sid]').forEach((el) => el.onclick = () => go('subject', { sid: el.dataset.sid }));
@@ -1240,9 +1242,11 @@ views.duel = () => {
       ${(!me || !me.done) && !full && (d.bet || me) ? `<button class="block" id="playDuel" style="margin-top:12px">${me ? 'Seguir jugando' : '¡Jugar ahora!'} →</button>` : ''}
       ${d.for_me && !me && !d.declined && !full ? '<button class="block ghost-red" id="declineDuel" style="margin-top:8px">🙅 Rechazar el reto</button>' : ''}
       ${rs.length < DUEL_MAX ? `<button class="block ${me && me.done ? '' : 'soft'}" id="shareDuel" style="margin-top:8px">📤 Desafiar a alguien con este duelo</button>` : ''}
+      ${allDone ? '<button class="block fight-cta" id="duelFight" style="margin-top:8px">🥊 Ver el combate del duelo</button>' : ''}
       <button class="block soft" id="duelChat" style="margin-top:8px">💬 Chat del duelo</button>
       <button class="block soft" id="toComp" style="margin-top:8px">⚔️ Volver a Competencia</button>`;
     document.getElementById('duelChat').onclick = () => go('chat', { room: d.id, title: d.topic });
+    const df = document.getElementById('duelFight'); if (df) df.onclick = () => { stopSpeaking(); duelFight(d, rs); };
     if (allDone && verdict) announceDuel(d, rs);
     const vEl = app.querySelector('.duel-verdict'); if (vEl && allDone && bigGap(rs)) vEl.insertAdjacentHTML('beforeend', '<div class="small" style="font-weight:700">¡Qué paliza! 😱</div>');
     const pd = document.getElementById('playDuel');
