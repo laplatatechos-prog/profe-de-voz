@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 51;
+const APP_VERSION = 52;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -1919,6 +1919,7 @@ views.admin = () => {
       if (!confirm(`¿Sacar a ${b.dataset.rmname} de la app? Se borran para siempre sus puntajes, duelos y mensajes, y no puede volver a pedir acceso.`)) return;
       b.disabled = true;
       const ok = await sbRpc('admin_remove_player', { p_player: settings.playerId, p_target: b.dataset.rm }).catch(() => false);
+      store.set('profe-removed', store.get('profe-removed', []).concat(b.dataset.rm));
       if (!ok) await sbRpc('admin_set_status', { p_player: settings.playerId, p_target: b.dataset.rm, p_status: 'rejected' }).catch(() => {}); // mientras tanto: sin acceso y oculto
       toast(ok ? `Listo: ${b.dataset.rmname} ya no está en la app.` : `${b.dataset.rmname} ya no tiene acceso y no aparece más. El borrado total queda para cuando el servidor lo permita.`); rankCache = null; load();
     });
@@ -1930,7 +1931,7 @@ views.admin = () => {
     document.getElementById('reload').onclick = load;
   };
   const load = () => sbRpc('admin_people', { p_player: settings.playerId })
-    .then((r) => { view.rows = r || []; view.err = null; }).catch((e) => { view.err = e.message; })
+    .then((r) => { const gone = REMOVED_IDS.concat(store.get('profe-removed', [])); view.rows = (r || []).filter((m) => !gone.includes(m.player)); view.err = null; }).catch((e) => { view.err = e.message; })
     .finally(() => { if (view.name === 'admin') draw(); });
   draw(); if (!view.rows) load();
 };
@@ -1960,6 +1961,7 @@ function shareScore(s) {
 setTimeout(() => { subjects.forEach(shareScore); rankingRows().catch(() => {}); }, 3000);
 // ---------- Lo que el profe te cuenta "por lo bajo" sobre cómo les va a los demás ----------
 let rankCache = null, rankAt = 0;
+const REMOVED_IDS = ['eae26659-46cd-4060-a7c0-8d0d7b163ba6']; // personas sacadas de la app
 const HIDDEN_PLAYERS = ['30ff443e2daccf0b0993b77bc510991b'];
 async function rankingRows() {
   if (rankCache && Date.now() - rankAt < 5 * 60 * 1000) return rankCache;
