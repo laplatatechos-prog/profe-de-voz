@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 54;
+const APP_VERSION = 55;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -1126,7 +1126,7 @@ views.compete = () => {
       <h2>Mis duelos</h2>
       ${view.loading ? '<p class="muted">Cargando…</p>' : view.err ? `<p class="muted">${esc(view.err)}</p>` : ds.length ? ds.map((d) => {
         const me = d.results.find((r) => r.me), others = d.results.filter((r) => !r.me);
-        return `<div class="card tap duel-row ${pend(d) ? 'duel-new' : ''}" data-duel="${d.id}">${pend(d) ? `<div class="duel-badge">⚔️ ¡${esc(d.creator_name)} te desafió!</div>` : ''}<div class="between"><b>${esc(d.topic)}</b><span class="muted small">${new Date(d.created_at).toLocaleDateString('es-AR')}</span></div>${d.bet ? `<div class="small">🎲 Se apuesta: ${esc(d.bet)}</div>` : ''}
+        return `<div class="card tap duel-row ${pend(d) ? 'duel-new' : ''}" data-duel="${d.id}">${pend(d) ? `<div class="duel-badge">${isFightDuel(d) ? '🥊' : '⚔️'} ¡${esc(d.creator_name)} te desafió${isFightDuel(d) ? ' a pelear' : ''}!</div>` : ''}<div class="between"><b>${esc(d.topic)}</b><span class="muted small">${new Date(d.created_at).toLocaleDateString('es-AR')}</span></div>${d.bet ? `<div class="small">🎲 Se apuesta: ${esc(d.bet)}</div>` : ''}
           <div class="small" style="margin-top:6px">${d.results.length ? d.results.map((r, i) => `${i === 0 && duelAllDone(d) ? '🏆 ' : ''}${esc(r.me ? 'Vos' : r.name)}: <b>${r.points}</b>${r.done ? '' : ' (jugando)'}`).join(' · ') : 'Nadie jugó todavía'}</div>
           ${d.declined && d.mine ? `<div class="small duel-declined">🙅 ${esc(d.declined_names || 'Tu rival')} rechazó el desafío</div>` : ''}
           ${!me || !me.done ? '<div class="small" style="margin-top:4px;color:var(--accent);font-weight:700">Te toca jugar →</div>' : !duelAllDone(d) ? `<div class="muted small" style="margin-top:4px">${d.target_name && d.mine ? `Esperando a ${esc(d.target_name)}…` : others.length ? 'Faltan jugadores o están jugando…' : 'Esperando rival. Compartí el link.'}</div>` : ''}</div>`;
@@ -1224,6 +1224,7 @@ views.duel = () => {
   setHeader('Duelo');
   const draw = () => {
     const d = view.d;
+    if (d && typeof isFightDuel === 'function' && isFightDuel(d)) { const id = d.id; view = { name: 'fightLive', id }; return render(); }
     if (!d) { app.innerHTML = `<p class="muted">${view.err ? esc(view.err) : 'Cargando duelo…'}</p>`; return; }
     const me = d.results.find((r) => r.me), rs = d.results, top = rs[0];
     const allDone = duelAllDone(d), full = rs.length >= DUEL_MAX && !me;
@@ -1468,7 +1469,7 @@ views.chat = () => {
   };
   const load = () => sbRpc('get_chat', { p_player: settings.playerId, p_room: view.room, p_after: view.last }).then((xs) => {
     if (!xs || !xs.length || view.name !== 'chat') return;
-    view.msgs = view.msgs.concat(xs).slice(-200); view.last = xs[xs.length - 1].id; paint();
+    view.msgs = view.msgs.concat(xs.filter((m) => !String(m.text).startsWith('§F'))).slice(-200); view.last = xs[xs.length - 1].id; paint();
   }).catch(() => {});
   const send = () => {
     const text = inp.value.trim(); if (!text) return;
