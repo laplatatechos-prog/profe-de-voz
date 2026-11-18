@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 52;
+const APP_VERSION = 53;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -792,6 +792,17 @@ views.home = () => {
   if (ng) { const ni = document.getElementById('nameInput'); ni.onkeydown = (e) => { if (e.key === 'Enter') ng.click(); };
     ng.onclick = () => { const n = ni.value.trim(); if (!n) return; settings.name = n; save(); render(); speak(`Hola, soy tu profe. ¿Qué querés aprender hoy?`); }; }
   const tr = document.getElementById('toRank'); if (tr) tr.onclick = () => go('compete');
+  if (settings.access && settings.access.is_admin && SB_URL && Date.now() - (window.__chkReq || 0) > 30000) { window.__chkReq = Date.now();
+    sbRpc('admin_people', { p_player: settings.playerId }).then((r) => {
+      const p = (r || []).filter((m) => m.status === 'pending'); if (!p.length || view.name !== 'home' || document.getElementById('reqBanner')) return;
+      app.insertAdjacentHTML('afterbegin', `<button class="block req-banner" id="reqBanner">🔔 ${p.length === 1 ? esc(p[0].name) + ' pide' : p.length + ' personas piden'} entrar a la app. ¿Le das permiso?</button>`);
+      document.getElementById('reqBanner').onclick = () => go('admin');
+      if ('Notification' in window && Notification.permission === 'granted' && !store.get('profe-req-' + p.map((m) => m.player).join(','), 0)) {
+        store.set('profe-req-' + p.map((m) => m.player).join(','), 1);
+        navigator.serviceWorker && navigator.serviceWorker.ready.then((reg) => reg.showNotification('🔔 Pedido de acceso', { body: `${p.map((m) => m.name).join(', ')} pide entrar a Profe de Voz.`, icon: 'icon-192.png', data: { url: './' } })).catch(() => {});
+      }
+    }).catch(() => {});
+  }
   if (tr && SB_URL && !needsAccess() && Date.now() - (window.__chkDuels || 0) > 30000) { window.__chkDuels = Date.now();
     sbRpc('my_duels', { p_player: settings.playerId }).then((ds) => { window.__pendDuels = (ds || []).filter((d) => d.for_me && !d.results.some((r) => r.me && r.done)).length; const b = document.getElementById('toRank'); if (b && window.__pendDuels) b.dataset.badge = window.__pendDuels; }).catch(() => {}); }
   if (tr && window.__pendDuels) tr.dataset.badge = window.__pendDuels;
@@ -1855,7 +1866,17 @@ async function refreshAccess() {
 }
 views.access = () => {
   setHeader('Profe de Voz');
-  const st = (settings.access && settings.access.status) || 'none';
+  let st = (settings.access && settings.access.status) || 'none';
+  // Si el administrador la sacó: no ve nada de la app. Su pedido para volver le llega al administrador, que decide.
+  if ((st === 'rejected' || st === 'removed') && settings.name && !store.get('profe-asked-back', 0)) {
+    store.set('profe-asked-back', 1);
+    sbRpc('request_access', { p_player: settings.playerId, p_name: settings.name }).then((x) => { if (x) { settings.access = { status: x }; save(); } }).catch(() => {});
+  }
+  if (st === 'rejected' || st === 'removed') {
+    app.innerHTML = `<div class="card ask-card" style="text-align:center"><div style="font-size:64px">🔒</div><div class="ask-q">No tenés acceso</div>
+      <p class="muted">El administrador decide si podés volver a entrar.</p></div>`;
+    return;
+  }
   const name = settings.name || '';
   app.innerHTML = `
     <div class="card ask-card" style="text-align:center">
@@ -1931,7 +1952,7 @@ views.admin = () => {
     document.getElementById('reload').onclick = load;
   };
   const load = () => sbRpc('admin_people', { p_player: settings.playerId })
-    .then((r) => { const gone = REMOVED_IDS.concat(store.get('profe-removed', [])); view.rows = (r || []).filter((m) => !gone.includes(m.player)); view.err = null; }).catch((e) => { view.err = e.message; })
+    .then((r) => { const gone = REMOVED_IDS.concat(store.get('profe-removed', [])); view.rows = (r || []).filter((m) => m.status === 'pending' || !gone.includes(m.player)); view.err = null; }).catch((e) => { view.err = e.message; })
     .finally(() => { if (view.name === 'admin') draw(); });
   draw(); if (!view.rows) load();
 };
