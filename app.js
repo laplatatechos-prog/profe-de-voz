@@ -4,7 +4,7 @@
 const MODEL = 'claude-sonnet-5-5';
 const FAST_MODEL = 'claude-haiku-5-5'; // más rápido para la charla y las correcciones
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const APP_VERSION = 50;
+const APP_VERSION = 51;
 // Ranking compartido (Supabase gratis). La clave es "publicable": está hecha para ir en la app.
 const SB_URL = 'https://gfroofkdxjgmsqohmqly.supabase.co', SB_KEY = 'sb_publishable_YfBmqwYVuM8GAol1acW8Ng_GvxkVcBt';
 const PALETTE = ['pink', 'mint', 'sky', 'lemon', 'lavender', 'peach'];
@@ -47,7 +47,7 @@ async function askClaudeOnce(system, messages, maxTokens, model) {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) {
       const code = d?.error?.code;
-      if (code === 'pending' || code === 'rejected' || code === 'no_member') { settings.access = { status: code === 'no_member' ? 'none' : code }; save(); setTimeout(render, 50); }
+      if (code === 'pending' || code === 'rejected' || code === 'removed' || code === 'no_member') { settings.access = { status: code === 'no_member' ? 'none' : code }; save(); setTimeout(render, 50); }
       if (/credit/i.test(d?.error?.message || '')) throw new Error('La cuenta de Claude del administrador se quedó sin crédito. Avisale.');
       throw new Error(d?.error?.message || 'No pude hablar con el profe. Probá de nuevo.');
     }
@@ -1108,6 +1108,7 @@ views.compete = () => {
         <input id="duelBet" class="ask-input" maxlength="120" style="margin-top:6px" placeholder="Ej: el que pierde lava los platos" required value="${esc(view.bet || '')}">
         <button class="block" id="newDuel" style="margin-top:12px">Crear duelo y desafiar →</button>
         <div id="duelMsg" class="muted small" style="margin-top:8px"></div></div>
+      ${pushOk() && !(Notification.permission === 'granted' && store.get('profe-push', 0)) ? '<button class="block" id="pushOn" style="margin-top:4px">🔔 Avisame cuando me desafíen</button>' : ''}
       <button class="block soft" id="toChat" style="margin-top:4px">💬 Charla con todos</button>
       <h2>Mis duelos</h2>
       ${view.loading ? '<p class="muted">Cargando…</p>' : view.err ? `<p class="muted">${esc(view.err)}</p>` : ds.length ? ds.map((d) => {
@@ -1128,6 +1129,7 @@ views.compete = () => {
     const ft = document.getElementById('freeTopic'); if (ft) ft.oninput = () => { view.free = ft.value; };
     const bt = document.getElementById('duelBet'); bt.oninput = () => { view.bet = bt.value; };
     document.getElementById('toChat').onclick = () => go('chat', { room: 'general' });
+    const po = document.getElementById('pushOn'); if (po) po.onclick = async () => { po.disabled = true; await enablePush(false); draw(); };
     app.querySelectorAll('[data-duel]').forEach((el) => el.onclick = () => go('duel', { id: el.dataset.duel }));
     document.getElementById('toRank2').onclick = () => go('ranking');
     document.getElementById('newDuel').onclick = () => createDuel(view.dt || 'mezcla', view.free, rvs(), (view.players || []).filter((x) => rvs().includes(x.id)), view.bet);
@@ -1152,6 +1154,26 @@ async function badBet(bet) {
   } catch {}
   return false;
 }
+// ---------- Avisos de retos: notificaciones en el celular, aunque la app esté cerrada (Web Push, gratis) ----------
+const VAPID_PUB = 'BI7RPGmiOwdTTfHR5-9xRYId1_d08tMwXztP6ZpYpkwXHPtit4xOnH-BeYiwdC8EL_i_eMBPKukTN-dNbW1mAqE';
+const PUSH_READY = false; // se activa cuando el servidor tenga los avisos instalados
+const pushOk = () => PUSH_READY && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const b64u = (s) => { const p = '='.repeat((4 - (s.length % 4)) % 4), r = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(r, (c) => c.charCodeAt(0)); };
+async function enablePush(quiet) {
+  if (!pushOk()) { if (!quiet) toast('Este navegador no permite avisos. En Android usá Chrome.'); return false; }
+  try {
+    const perm = Notification.permission === 'granted' ? 'granted' : quiet ? Notification.permission : await Notification.requestPermission();
+    if (perm !== 'granted') { if (!quiet) toast('Sin permiso no te puedo avisar. Lo podés activar después desde acá.'); return false; }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUB) });
+    await sbRpc('save_push', { p_player: settings.playerId, p_sub: sub.toJSON() });
+    store.set('profe-push', 1); if (!quiet) toast('¡Listo! Te voy a avisar cuando alguien te desafíe. 🔔');
+    return true;
+  } catch { if (!quiet) toast('No pude activar los avisos. Probá de nuevo.'); return false; }
+}
+function notifyDuel(id) {
+  fetch(`${SB_URL}/functions/v1/notify-duel`, { method: 'POST', headers: { 'content-type': 'application/json', apikey: SB_KEY }, body: JSON.stringify({ id, player: settings.playerId }) }).catch(() => {});
+}
 async function createDuel(topicKey, free, targets, targetObjs, bet) {
   const btn = document.getElementById('newDuel'), msg = document.getElementById('duelMsg');
   if (!settings.name) { msg.textContent = 'Primero poné tu nombre en Inicio o en Configuración.'; return; }
@@ -1174,6 +1196,7 @@ async function createDuel(topicKey, free, targets, targetObjs, bet) {
     if (qs.length < 3) throw new Error('No pude armar las preguntas. Probá de nuevo.');
     const id = await sbRpc('create_duel4', { p_bet: String(bet).trim(), p_player: settings.playerId, p_name: settings.name, p_topic: freeT || duelTopicName(topicKey), p_diff: 'basico', p_questions: qs, p_target: targets[0] || null, p_target2: targets[1] || null });
     if (!id) throw new Error('No pude crear el duelo. Probá de nuevo.');
+    if (targets.length) notifyDuel(id);
     if (freeT) store.set('profe-duel-topics', [freeT].concat(store.get('profe-duel-topics', []).filter((t) => t.toLowerCase() !== freeT.toLowerCase())).slice(0, 12));
     if (targetObjs.length) toast(`Listo: ${targetObjs.map((x) => x.name).join(' y ')} ${targetObjs.length > 1 ? 'van' : 'va'} a ver el desafío cuando abra${targetObjs.length > 1 ? 'n' : ''} Competencia.`);
     go('duel', { id, fresh: true });
@@ -1836,11 +1859,12 @@ views.access = () => {
   const name = settings.name || '';
   app.innerHTML = `
     <div class="card ask-card" style="text-align:center">
-      <div style="font-size:64px">${st === 'pending' ? '⏳' : st === 'rejected' ? '🚫' : '👋'}</div>
+      <div style="font-size:64px">${st === 'pending' ? '⏳' : st === 'rejected' || st === 'removed' ? '🚫' : '👋'}</div>
       ${st === 'pending' ? `<div class="ask-q">¡Listo, ${esc(name)}! Tu pedido está esperando</div>
           <p class="muted">El administrador tiene que aprobarte. Avisale por WhatsApp así lo ve rápido.</p>
           <button class="block" id="nudge">💬 Avisarle que pedí entrar</button>
           <button class="soft block" id="recheck" style="margin-top:10px">🔄 Ya me aprobó, revisar</button>`
+      : st === 'removed' ? `<div class="ask-q">El administrador te sacó de la app</div><p>Ya no podés usar el Profe de Voz.</p>`
       : st === 'rejected' ? `<div class="ask-q">Tu pedido no fue aprobado</div>
           <p class="muted">Si creés que es un error, hablá con el administrador y volvé a pedirlo.</p>
           <button class="block" id="ask">Pedir acceso de nuevo</button>`
@@ -1872,7 +1896,7 @@ views.admin = () => {
   setHeader('Administrador');
   const draw = () => {
     const rows = view.rows || [];
-    const label = { pending: '⏳ Esperando', approved: '✅ Aprobado', rejected: '🚫 Rechazado' };
+    const label = { pending: '⏳ Esperando', approved: '✅ Aprobado', rejected: '🚫 Rechazado', removed: '🗑️ Sacado de la app' };
     app.innerHTML = `
       <div class="card ask-card"><div class="ask-q">👑 Solicitudes y personas</div>
         <div class="muted small">Cada persona aprobada usa tu clave desde el servidor. Cada respuesta del profe es 1 consulta. Podés cambiar el límite diario de cada uno.</div></div>
@@ -1883,12 +1907,21 @@ views.admin = () => {
             ${m.is_admin ? '' : `<div class="row" style="margin-top:8px;gap:8px;align-items:center"><span class="small">Límite por día:</span><input type="number" min="0" max="5000" value="${m.daily_limit}" data-lim="${m.player}" style="width:90px"><button class="soft" data-limsave="${m.player}">Guardar</button></div>`}
             ${m.is_admin ? '' : `<div class="row" style="margin-top:10px;gap:8px">
               ${m.status !== 'approved' ? `<button class="grow" data-ok="${m.player}">✅ Aprobar</button>` : ''}
-              ${m.status !== 'rejected' ? `<button class="grow ghost" data-no="${m.player}">🚫 ${m.status === 'approved' ? 'Quitar acceso' : 'Rechazar'}</button>` : ''}</div>`}
+              ${m.status !== 'rejected' && m.status !== 'removed' ? `<button class="grow ghost" data-no="${m.player}">🚫 ${m.status === 'approved' ? 'Quitar acceso' : 'Rechazar'}</button>` : ''}</div>
+            ${m.status !== 'removed' ? `<button class="block ghost-red" data-rm="${m.player}" data-rmname="${esc(m.name)}" style="margin-top:8px">🗑️ Sacar de la app</button>` : ''}`}
           </div>`).join('')}
       <button class="soft block" id="reload">🔄 Actualizar</button>`;
     const set = async (target, status) => { await sbRpc('admin_set_status', { p_player: settings.playerId, p_target: target, p_status: status }).catch(() => {}); load(); };
     app.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => set(b.dataset.ok, 'approved'));
     app.querySelectorAll('[data-no]').forEach((b) => b.onclick = () => set(b.dataset.no, 'rejected'));
+    // Solo el administrador: borra para siempre sus puntajes, duelos y mensajes, y no puede volver a pedir acceso.
+    app.querySelectorAll('[data-rm]').forEach((b) => b.onclick = async () => {
+      if (!confirm(`¿Sacar a ${b.dataset.rmname} de la app? Se borran para siempre sus puntajes, duelos y mensajes, y no puede volver a pedir acceso.`)) return;
+      b.disabled = true;
+      const ok = await sbRpc('admin_remove_player', { p_player: settings.playerId, p_target: b.dataset.rm }).catch(() => false);
+      if (!ok) await sbRpc('admin_set_status', { p_player: settings.playerId, p_target: b.dataset.rm, p_status: 'rejected' }).catch(() => {}); // mientras tanto: sin acceso y oculto
+      toast(ok ? `Listo: ${b.dataset.rmname} ya no está en la app.` : `${b.dataset.rmname} ya no tiene acceso y no aparece más. El borrado total queda para cuando el servidor lo permita.`); rankCache = null; load();
+    });
     app.querySelectorAll('[data-limsave]').forEach((b) => b.onclick = async () => {
       const v = +app.querySelector(`[data-lim="${b.dataset.limsave}"]`).value;
       const ok = await sbRpc('admin_set_limit', { p_player: settings.playerId, p_target: b.dataset.limsave, p_limit: v }).catch(() => false);
@@ -1927,9 +1960,11 @@ function shareScore(s) {
 setTimeout(() => { subjects.forEach(shareScore); rankingRows().catch(() => {}); }, 3000);
 // ---------- Lo que el profe te cuenta "por lo bajo" sobre cómo les va a los demás ----------
 let rankCache = null, rankAt = 0;
+const HIDDEN_PLAYERS = ['30ff443e2daccf0b0993b77bc510991b'];
 async function rankingRows() {
   if (rankCache && Date.now() - rankAt < 5 * 60 * 1000) return rankCache;
-  rankCache = ((await sbRpc('get_ranking', { p_player: settings.playerId })) || []).map((r) => ({ ...r, avg: r.avg == null ? null : +r.avg }));
+  // Personas sacadas por el administrador: no aparecen en el ranking ni en los comentarios.
+  rankCache = ((await sbRpc('get_ranking', { p_player: settings.playerId })) || []).filter((r) => !HIDDEN_PLAYERS.includes(r.player)).map((r) => ({ ...r, avg: r.avg == null ? null : +r.avg }));
   rankAt = Date.now();
   return rankCache;
 }
@@ -2051,7 +2086,7 @@ views.ranking = () => {
   if (!view.rows && !view.loading) {
     view.loading = true;
     sbRpc('get_ranking', { p_player: settings.playerId })
-      .then((rows) => { view.rows = (rows || []).map((r) => ({ ...r, avg: r.avg == null ? null : +r.avg })); })
+      .then((rows) => { view.rows = (rows || []).filter((r) => !HIDDEN_PLAYERS.includes(r.player)).map((r) => ({ ...r, avg: r.avg == null ? null : +r.avg })); })
       .catch((e) => { view.err = e.message; })
       .finally(() => { view.loading = false; if (view.name === 'ranking') draw(); });
   }
